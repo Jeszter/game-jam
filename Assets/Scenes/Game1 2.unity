@@ -5520,6 +5520,7 @@ MonoBehaviour:
   mouseSensitivity: 2
   maxLookUp: 80
   maxLookDown: 80
+  phoneLock: 0
 --- !u!143 &829980136
 CharacterController:
   m_ObjectHideFlags: 0
@@ -7095,6 +7096,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -521122626064382157, guid: 02ad78cca7f19f843b49a2e580791919, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1766795737}
+    - targetCorrespondingSourceObject: {fileID: -521122626064382157, guid: 02ad78cca7f19f843b49a2e580791919, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1766795741}
+    - targetCorrespondingSourceObject: {fileID: 5960886016983198515, guid: 02ad78cca7f19f843b49a2e580791919, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1201380914}
     - targetCorrespondingSourceObject: {fileID: -6171509790685996724, guid: 02ad78cca7f19f843b49a2e580791919, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1852975968}
@@ -8154,6 +8161,32 @@ BoxCollider:
   m_Enabled: 1
   serializedVersion: 3
   m_Size: {x: 0.5176254, y: 0.42418113, z: 0.51762545}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!1 &1201380910 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5960886016983198515, guid: 02ad78cca7f19f843b49a2e580791919, type: 3}
+  m_PrefabInstance: {fileID: 1055805249}
+  m_PrefabAsset: {fileID: 0}
+--- !u!65 &1201380914
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1201380910}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.41900533, y: 0.3114545, z: 0.23785615}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &1207665607
 GameObject:
@@ -13124,8 +13157,21 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.52771616, y: 0.021157421, z: 0.46614346}
+  m_Size: {x: 0.52771616, y: 0.25, z: 0.46614346}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &1766795741
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1766795733}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 781fe5e0d0a9f204ba6b298979a4f39b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LaptopGames
+  interactDistance: 3
 --- !u!1 &1799106853
 GameObject:
   m_ObjectHideFlags: 0
@@ -13481,8 +13527,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 2.6, y: 0.7167333, z: 0.71728975}
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Size: {x: 2.6519752, y: 1.8056844, z: 0.7316357}
+  m_Center: {x: 0.0000076293945, y: 0.5267621, z: 0}
 --- !u!114 &1874404413
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -13495,7 +13541,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bbf74224d0e8bf2448342b868d9aa9a3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TvFlappyBird
-  interactionDistance: 5
+  interactionDistance: 12
   pipeSpeed: 6
   spawnInterval: 1.8
   gapSize: 3.5
