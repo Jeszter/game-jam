@@ -11,7 +11,7 @@ public class PlayerMovement : MonoBehaviour
     public float gravity    = -18f;
 
     [Header("Камера")]
-    public float cameraHeight     = 15f;
+    public float cameraHeight     = 1.75f;
     public float mouseSensitivity = 2f;
     public float maxLookUp        = 80f;
     public float maxLookDown      = 80f;
@@ -25,16 +25,17 @@ public class PlayerMovement : MonoBehaviour
     {
         cc = GetComponent<CharacterController>();
 
-        // підганяємо CharacterController під ріст
         cc.height = 1.8f;
-        cc.radius = 0.1f;   // вузький — щоб проходив у двері
+        cc.radius = 0.3f;       // wide enough to keep away from walls
         cc.center = new Vector3(0f, 0.9f, 0f);
+        cc.skinWidth = 0.08f;
 
         Camera cam = GetComponentInChildren<Camera>();
         if (cam != null)
         {
             camTransform = cam.transform;
             camTransform.localPosition = new Vector3(0f, cameraHeight, 0f);
+            cam.nearClipPlane = 0.15f;
         }
 
         Cursor.lockState = CursorLockMode.Locked;
