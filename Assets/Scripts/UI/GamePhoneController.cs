@@ -78,12 +78,35 @@ public class GamePhoneController : MonoBehaviour
         if (isOpen || isAnimating) return;
         SwitchScreen(PhoneScreen.Home);
         StartCoroutine(SlidePhone(true));
+
+        // Show cursor and disable camera look
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+        SetPlayerLookEnabled(false);
     }
 
     public void ClosePhone()
     {
         if (!isOpen || isAnimating) return;
         StartCoroutine(SlidePhone(false));
+
+        // Hide cursor and re-enable camera look
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+        SetPlayerLookEnabled(true);
+    }
+
+    private void SetPlayerLookEnabled(bool enabled)
+    {
+        // Disable/enable PlayerMovement mouse look by toggling the script
+        // We only want to stop looking, not moving, so we use a flag approach
+        GameObject player = GameObject.Find("player");
+        if (player != null)
+        {
+            var pm = player.GetComponent<PlayerMovement>();
+            if (pm != null)
+                pm.phoneLock = !enabled;
+        }
     }
 
     private IEnumerator SlidePhone(bool open)

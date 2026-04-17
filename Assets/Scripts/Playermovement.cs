@@ -16,6 +16,8 @@ public class PlayerMovement : MonoBehaviour
     public float maxLookUp        = 80f;
     public float maxLookDown      = 80f;
 
+    [HideInInspector] public bool phoneLock = false;
+
     private CharacterController cc;
     private Transform           camTransform;
     private Vector3             velocity;
@@ -51,6 +53,7 @@ public class PlayerMovement : MonoBehaviour
     private void Look()
     {
         if (camTransform == null || Mouse.current == null) return;
+        if (phoneLock) return;
         Vector2 delta = Mouse.current.delta.ReadValue() * 0.05f * mouseSensitivity;
         xRotation -= delta.y;
         xRotation  = Mathf.Clamp(xRotation, -maxLookDown, maxLookUp);
