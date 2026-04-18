@@ -1,14 +1,25 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections;
 using System.Collections.Generic;
 
-public class TikTokFeedController : MonoBehaviour
+/// <summary>
+/// TikTok-подобная лента. Пост на весь экран. Свайп вверх/вниз пальцем (drag-ом мыши)
+/// переключает на следующий/предыдущий пост. Картинки берутся случайно из Resources/Posts.
+/// </summary>
+public class TikTokFeedController : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     [SerializeField] private RectTransform postParent;
     [SerializeField] private GameObject postPrefabTemplate;
     [SerializeField] private bool generateMorePostsWhenEnded = true;
     [SerializeField] private float imagePostChance = 0.6f;
+
+    [Header("Swipe")]
+    [Tooltip("Минимальное расстояние свайпа (в пикселях канваса) для перехода")]
+    [SerializeField] private float swipeThreshold = 120f;
+    [SerializeField] private float swipeAnimDuration = 0.28f;
 
     [System.Serializable]
     public class TikTokPost
@@ -27,7 +38,15 @@ public class TikTokFeedController : MonoBehaviour
 
     private int currentPostIndex = 0;
     private GameObject currentPostObject;
+    private GameObject nextPostObject;      // используется во время анимации свайпа
     private Sprite[] loadedPostSprites;
+
+    // Swipe state
+    private bool isDragging;
+    private bool isAnimating;
+    private float dragStartY;
+    private float currentDragDelta;
+    private float parentHeight;
 
     private readonly string[] usernamesPart1 =
     {
@@ -43,16 +62,8 @@ public class TikTokFeedController : MonoBehaviour
 
     private readonly string[] postStarts =
     {
-        "POV:",
-        "Me when",
-        "Nobody talks about how",
-        "Why does it feel like",
-        "At this point",
-        "It is crazy how",
-        "Sometimes I think",
-        "You ever notice how",
-        "That moment when",
-        "I swear"
+        "POV:", "Me when", "Nobody talks about how", "Why does it feel like", "At this point",
+        "It is crazy how", "Sometimes I think", "You ever notice how", "That moment when", "I swear"
     };
 
     private readonly string[] postSubjects =
@@ -119,25 +130,241 @@ public class TikTokFeedController : MonoBehaviour
         if (posts.Count == 0)
             GenerateInitialPosts(5);
 
+        EnsureSwipeReceiver();
         ShowCurrentPost();
+    }
+
+    /// <summary>
+    /// Гарантирует, что на postParent есть Image (raycastTarget=true) — иначе drag не ловится.
+    /// </summary>
+    private void EnsureSwipeReceiver()
+    {
+        if (postParent == null) return;
+        var img = postParent.GetComponent<Image>();
+        if (img == null)
+        {
+            img = postParent.gameObject.AddComponent<Image>();
+            img.color = new Color(0, 0, 0, 0.001f); // почти невидим, но ловит raycast
+        }
+        img.raycastTarget = true;
+
+        // Опционально маска, чтобы анимируемый соседний пост не вылазил за пределы экрана
+        if (postParent.GetComponent<RectMask2D>() == null)
+            postParent.gameObject.AddComponent<RectMask2D>();
     }
 
     public void NextPost()
     {
-        if (currentPostIndex < posts.Count - 1)
+        if (isAnimating) return;
+        if (currentPostIndex >= posts.Count - 1)
         {
-            currentPostIndex++;
-            ShowCurrentPost();
+            if (generateMorePostsWhenEnded) AddGeneratedPost();
+            else return;
+        }
+        EnsurePreviewPost(+1);
+        StartCoroutine(FinishSwipe(+1));
+    }
+
+    public void PrevPost()
+    {
+        if (isAnimating) return;
+        if (currentPostIndex <= 0) return;
+        EnsurePreviewPost(-1);
+        StartCoroutine(FinishSwipe(-1));
+    }
+
+    // ---------------- Drag handlers ----------------
+
+    public void OnBeginDrag(PointerEventData eventData)
+    {
+        if (isAnimating) return;
+        isDragging = true;
+        dragStartY = eventData.position.y;
+        currentDragDelta = 0f;
+        parentHeight = postParent != null ? postParent.rect.height : 800f;
+    }
+
+    public void OnDrag(PointerEventData eventData)
+    {
+        if (!isDragging || currentPostObject == null) return;
+        currentDragDelta = eventData.position.y - dragStartY;
+
+        // Не даём тянуть назад, если мы на первом посте
+        if (currentDragDelta > 0f && currentPostIndex <= 0)
+            currentDragDelta = Mathf.Min(currentDragDelta * 0.25f, 60f); // резиновый эффект
+
+        var rt = currentPostObject.GetComponent<RectTransform>();
+        if (rt != null)
+            rt.anchoredPosition = new Vector2(0f, currentDragDelta);
+
+        // Превью следующего/предыдущего "подкрадывается" снизу/сверху
+        EnsurePreviewPost();
+        if (nextPostObject != null)
+        {
+            var nrt = nextPostObject.GetComponent<RectTransform>();
+            if (nrt != null)
+            {
+                float sign = currentDragDelta < 0f ? -1f : 1f;
+                float offset = (currentDragDelta < 0f ? parentHeight : -parentHeight) + currentDragDelta;
+                nrt.anchoredPosition = new Vector2(0f, offset);
+                _ = sign;
+            }
+        }
+    }
+
+    public void OnEndDrag(PointerEventData eventData)
+    {
+        if (!isDragging) return;
+        isDragging = false;
+
+        float delta = currentDragDelta;
+        currentDragDelta = 0f;
+
+        // Cleanup превью, восстановим если ниже порога
+        if (Mathf.Abs(delta) < swipeThreshold)
+        {
+            StartCoroutine(SnapBack());
             return;
         }
 
-        if (generateMorePostsWhenEnded)
+        int dir = delta < 0f ? +1 : -1;
+        if (dir < 0 && currentPostIndex <= 0)
         {
-            AddGeneratedPost();
-            currentPostIndex++;
-            ShowCurrentPost();
+            StartCoroutine(SnapBack());
+            return;
         }
+
+        // Завершаем анимацию в ту же сторону
+        StartCoroutine(FinishSwipe(dir));
     }
+
+    private IEnumerator SnapBack()
+    {
+        isAnimating = true;
+        float dur = 0.18f;
+        float t = 0f;
+        Vector2 curStart = currentPostObject != null
+            ? currentPostObject.GetComponent<RectTransform>().anchoredPosition
+            : Vector2.zero;
+        Vector2 nextStart = nextPostObject != null
+            ? nextPostObject.GetComponent<RectTransform>().anchoredPosition
+            : Vector2.zero;
+        while (t < dur)
+        {
+            t += Time.unscaledDeltaTime;
+            float k = Mathf.Clamp01(t / dur);
+            float s = 1f - Mathf.Pow(1f - k, 3f);
+            if (currentPostObject != null)
+                currentPostObject.GetComponent<RectTransform>().anchoredPosition = Vector2.Lerp(curStart, Vector2.zero, s);
+            if (nextPostObject != null)
+            {
+                Vector2 target = new Vector2(0f, nextStart.y > 0f ? parentHeight : -parentHeight);
+                nextPostObject.GetComponent<RectTransform>().anchoredPosition = Vector2.Lerp(nextStart, target, s);
+            }
+            yield return null;
+        }
+
+        if (nextPostObject != null)
+        {
+            Destroy(nextPostObject);
+            nextPostObject = null;
+        }
+        isAnimating = false;
+    }
+
+    private IEnumerator FinishSwipe(int dir)
+    {
+        isAnimating = true;
+
+        // Убедимся что есть следующий/предыдущий
+        if (dir > 0)
+        {
+            if (currentPostIndex >= posts.Count - 1)
+            {
+                if (generateMorePostsWhenEnded) AddGeneratedPost();
+                else { isAnimating = false; yield break; }
+            }
+        }
+
+        EnsurePreviewPost(dir); // гарантия что nextPostObject есть
+
+        var curRT = currentPostObject != null ? currentPostObject.GetComponent<RectTransform>() : null;
+        var nxtRT = nextPostObject != null ? nextPostObject.GetComponent<RectTransform>() : null;
+
+        Vector2 curStart = curRT != null ? curRT.anchoredPosition : Vector2.zero;
+        Vector2 nxtStart = nxtRT != null ? nxtRT.anchoredPosition : Vector2.zero;
+
+        Vector2 curEnd = new Vector2(0f, dir > 0 ? parentHeight : -parentHeight);
+        Vector2 nxtEnd = Vector2.zero;
+
+        float t = 0f;
+        while (t < swipeAnimDuration)
+        {
+            t += Time.unscaledDeltaTime;
+            float k = Mathf.Clamp01(t / swipeAnimDuration);
+            float s = 1f - Mathf.Pow(1f - k, 3f);
+            if (curRT != null) curRT.anchoredPosition = Vector2.Lerp(curStart, curEnd, s);
+            if (nxtRT != null) nxtRT.anchoredPosition = Vector2.Lerp(nxtStart, nxtEnd, s);
+            yield return null;
+        }
+
+        // Удаляем старый, новый становится текущим
+        if (currentPostObject != null) Destroy(currentPostObject);
+        currentPostObject = nextPostObject;
+        nextPostObject = null;
+        if (curRT != null) curRT.anchoredPosition = Vector2.zero;
+        if (currentPostObject != null)
+        {
+            var rt = currentPostObject.GetComponent<RectTransform>();
+            if (rt != null) rt.anchoredPosition = Vector2.zero;
+        }
+
+        // dir > 0 → свайп вверх → следующий пост (+1); dir < 0 → предыдущий (-1)
+        currentPostIndex = Mathf.Clamp(currentPostIndex + dir, 0, posts.Count - 1);
+
+        // Дофамин за свайп
+        if (GameEconomy.Instance != null)
+            GameEconomy.Instance.AwardDopamine(GameEconomy.ActTikTok);
+
+        isAnimating = false;
+    }
+
+    private void EnsurePreviewPost(int dir = 0)
+    {
+        if (nextPostObject != null) return;
+        if (postParent == null || postPrefabTemplate == null) return;
+
+        // Определяем направление — если передан dir берём его, иначе по знаку currentDragDelta
+        int d = dir != 0 ? dir : (currentDragDelta < 0f ? +1 : -1);
+
+        int targetIdx = currentPostIndex + (d > 0 ? 1 : -1);
+        if (targetIdx < 0) return;
+        if (targetIdx >= posts.Count)
+        {
+            if (!generateMorePostsWhenEnded) return;
+            AddGeneratedPost();
+            targetIdx = posts.Count - 1;
+        }
+
+        nextPostObject = Instantiate(postPrefabTemplate, postParent);
+        nextPostObject.name = $"PostPreview_{targetIdx}";
+        nextPostObject.SetActive(true);
+
+        RectTransform prt = nextPostObject.GetComponent<RectTransform>();
+        if (prt != null)
+        {
+            prt.anchorMin = Vector2.zero;
+            prt.anchorMax = Vector2.one;
+            prt.offsetMin = Vector2.zero;
+            prt.offsetMax = Vector2.zero;
+            prt.localScale = Vector3.one;
+            prt.anchoredPosition = new Vector2(0f, d > 0 ? -parentHeight : parentHeight);
+        }
+
+        ApplyPostData(nextPostObject, posts[targetIdx]);
+    }
+
+    // ---------------- Show / Apply ----------------
 
     private void ShowCurrentPost()
     {
@@ -146,6 +373,8 @@ public class TikTokFeedController : MonoBehaviour
 
         if (currentPostObject != null)
             Destroy(currentPostObject);
+
+        postPrefabTemplate.SetActive(false);
 
         currentPostObject = Instantiate(postPrefabTemplate, postParent);
         currentPostObject.name = $"Post_{currentPostIndex}";
@@ -169,7 +398,10 @@ public class TikTokFeedController : MonoBehaviour
     {
         Image bg = postObj.GetComponent<Image>();
         if (bg != null)
+        {
             bg.color = post.bgColor;
+            bg.raycastTarget = false; // пропускаем raycast через пост, ловим на parent
+        }
 
         TMP_Text[] texts = postObj.GetComponentsInChildren<TMP_Text>(true);
         foreach (var txt in texts)
@@ -184,6 +416,14 @@ public class TikTokFeedController : MonoBehaviour
                 txt.text = FormatNumber(post.comments);
             else if (txt.gameObject.name == "ShareCount")
                 txt.text = FormatNumber(post.shares);
+            txt.raycastTarget = false;
+        }
+
+        // Отключаем raycast на всех image внутри поста (чтобы drag работал поверх)
+        var allImages = postObj.GetComponentsInChildren<Image>(true);
+        foreach (var im in allImages)
+        {
+            if (im != bg) im.raycastTarget = false;
         }
 
         Transform imageTransform = postObj.transform.Find("PostImage");
@@ -197,6 +437,7 @@ public class TikTokFeedController : MonoBehaviour
                     postImage.gameObject.SetActive(true);
                     postImage.sprite = post.postSprite;
                     postImage.preserveAspect = true;
+                    postImage.raycastTarget = false;
                 }
                 else
                 {
@@ -206,10 +447,11 @@ public class TikTokFeedController : MonoBehaviour
         }
     }
 
+    // ---------------- Generation ----------------
+
     private void GenerateInitialPosts(int count)
     {
         posts.Clear();
-
         for (int i = 0; i < count; i++)
             posts.Add(GeneratePost(i));
     }
@@ -253,13 +495,8 @@ public class TikTokFeedController : MonoBehaviour
         string right = usernamesPart2[Random.Range(0, usernamesPart2.Length)];
 
         float roll = Random.value;
-
-        if (roll < 0.35f)
-            return "@" + left + "_" + right;
-
-        if (roll < 0.6f)
-            return "@" + left + right + Random.Range(7, 9999).ToString();
-
+        if (roll < 0.35f) return "@" + left + "_" + right;
+        if (roll < 0.6f)  return "@" + left + right + Random.Range(7, 9999).ToString();
         return "@" + left + right;
     }
 
@@ -271,7 +508,6 @@ public class TikTokFeedController : MonoBehaviour
         string start = postStarts[Random.Range(0, postStarts.Length)];
         string subject = postSubjects[Random.Range(0, postSubjects.Length)];
         string ending = postEndings[Random.Range(0, postEndings.Length)];
-
         return start + " " + subject + " " + ending;
     }
 
@@ -290,7 +526,6 @@ public class TikTokFeedController : MonoBehaviour
             "the feed is locked in tonight",
             "this image has too much aura"
         };
-
         return captions[Random.Range(0, captions.Length)];
     }
 
@@ -298,10 +533,8 @@ public class TikTokFeedController : MonoBehaviour
     {
         int baseMin = 300 + index * 120;
         int baseMax = 12000 + index * 850;
-
         if (Random.value < 0.15f)
             return Random.Range(25000 + index * 1000, 180000 + index * 3000);
-
         return Random.Range(baseMin, baseMax);
     }
 
@@ -323,7 +556,6 @@ public class TikTokFeedController : MonoBehaviour
     {
         Color[] colors =
         {
-
             new Color(0.06f, 0.04f, 0.12f),
             new Color(0.12f, 0.04f, 0.06f),
             new Color(0.04f, 0.08f, 0.12f),
@@ -333,18 +565,13 @@ public class TikTokFeedController : MonoBehaviour
             new Color(0.03f, 0.07f, 0.09f),
             new Color(0.09f, 0.03f, 0.05f)
         };
-
         return colors[Random.Range(0, colors.Length)];
     }
 
     private string FormatNumber(int num)
     {
-        if (num >= 1000000)
-            return (num / 1000000f).ToString("0.#") + "M";
-
-        if (num >= 1000)
-            return (num / 1000f).ToString("0.#") + "K";
-
+        if (num >= 1000000) return (num / 1000000f).ToString("0.#") + "M";
+        if (num >= 1000)    return (num / 1000f).ToString("0.#") + "K";
         return num.ToString();
     }
 }

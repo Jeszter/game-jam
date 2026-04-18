@@ -328,6 +328,13 @@ public class SubwayGame : MonoBehaviour
                     var t = coinTextObj.GetComponent<TMP_Text>();
                     if (t != null) t.text = "Coins: " + coinCount;
                 }
+
+                // Реально зачисляем монеты и дофамин в глобальной экономике
+                if (GameEconomy.Instance != null)
+                {
+                    GameEconomy.Instance.AwardDopamine(GameEconomy.ActSubway);
+                    GameEconomy.Instance.AddCoins(1);
+                }
             }
         }
     }

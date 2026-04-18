@@ -166,6 +166,10 @@ public class DoomifyController : MonoBehaviour
         audioSource.Play();
         isPlaying = true;
 
+        // Смена трека тоже чуть стимулирует дофамин
+        if (GameEconomy.Instance != null)
+            GameEconomy.Instance.AwardDopamine(GameEconomy.ActMusic);
+
         UpdateNowPlaying();
         HighlightCurrentTrack();
     }

@@ -22,6 +22,8 @@ public class ShopController : MonoBehaviour
         public string description = "A cool item";
         public string unlockObjectPath = ""; // Scene path to unlock (activate) after purchase
         public float dopamineGain = 15f;
+        [Tooltip("Еда — можно покупать повторно, респавнит объект на сцене")]
+        public bool isRestockable = false;
         [HideInInspector] public bool purchased = false;
     }
 
@@ -36,9 +38,11 @@ public class ShopController : MonoBehaviour
         if (items.Count == 0)
             GenerateDefaultItems();
 
-        // Hide all "unlockable" objects at start if not yet purchased
+        // Hide all non-food "unlockable" objects at start if not yet purchased.
+        // ЕДА (isRestockable) — на старте активна (лежит на кухне).
         foreach (var item in items)
         {
+            if (item.isRestockable) continue;
             if (!item.purchased && !string.IsNullOrEmpty(item.unlockObjectPath))
             {
                 var go = GameObject.Find(item.unlockObjectPath);
@@ -75,7 +79,44 @@ public class ShopController : MonoBehaviour
         items.Add(new ShopItem { itemName = "Music", emoji = "#", price = 30, description = "Lo-fi beats to scroll to", dopamineGain = 8f });
         items.Add(new ShopItem { itemName = "Phone+", emoji = "+", price = 500, description = "Faster scrolling speed", dopamineGain = 5f });
         items.Add(new ShopItem { itemName = "Energy", emoji = "!", price = 75, description = "+20 Dopamine boost", dopamineGain = 20f });
-        items.Add(new ShopItem { itemName = "Snack", emoji = "*", price = 25, description = "Late night fuel", dopamineGain = 5f });
+
+        // ЕДА — респавнится на кухне. unlockObjectPath должен совпадать с путём к FoodItem на сцене.
+        items.Add(new ShopItem {
+            itemName = "Pizza",
+            emoji = "🍕",
+            price = 40,
+            description = "Restock pizza in the kitchen (+hunger)",
+            unlockObjectPath = "House/Food/Pizza",
+            dopamineGain = 5f,
+            isRestockable = true
+        });
+        items.Add(new ShopItem {
+            itemName = "Burger",
+            emoji = "🍔",
+            price = 30,
+            description = "Restock burger (+hunger)",
+            unlockObjectPath = "House/Food/Burger",
+            dopamineGain = 5f,
+            isRestockable = true
+        });
+        items.Add(new ShopItem {
+            itemName = "Soda",
+            emoji = "🥤",
+            price = 20,
+            description = "Restock soda (+hunger)",
+            unlockObjectPath = "House/Food/Soda",
+            dopamineGain = 3f,
+            isRestockable = true
+        });
+        items.Add(new ShopItem {
+            itemName = "Apple",
+            emoji = "🍎",
+            price = 15,
+            description = "Restock healthy snack",
+            unlockObjectPath = "House/Food/Apple",
+            dopamineGain = 2f,
+            isRestockable = true
+        });
     }
 
     private void BuildShop()
@@ -138,7 +179,7 @@ public class ShopController : MonoBehaviour
     {
         if (index < 0 || index >= items.Count) return;
         var item = items[index];
-        if (item.purchased) return;
+        if (item.purchased && !item.isRestockable) return;
 
         if (hudController == null) return;
 
@@ -152,7 +193,7 @@ public class ShopController : MonoBehaviour
         }
 
         hudController.AddDopamine(item.dopamineGain);
-        item.purchased = true;
+        if (!item.isRestockable) item.purchased = true;
 
         // Unlock the associated game object
         if (!string.IsNullOrEmpty(item.unlockObjectPath))
@@ -174,8 +215,17 @@ public class ShopController : MonoBehaviour
             }
         }
 
-        MarkAsPurchased(index);
+        if (!item.isRestockable)
+            MarkAsPurchased(index);
+        else
+            FlashGreen(index);
         Debug.Log($"Bought {item.itemName} for {item.price} DC");
+    }
+
+    private void FlashGreen(int index)
+    {
+        if (itemPriceTexts.TryGetValue(index, out var priceTxt))
+            StartCoroutine(FlashText(priceTxt, new Color(0.3f, 1f, 0.4f)));
     }
 
     private void MarkAsPurchased(int index)

@@ -358,11 +358,20 @@ public class CasinoGame : MonoBehaviour
         if (winAmount > 0)
         {
             if (hud != null) hud.AddCoins(winAmount);
+            // Выигрыш — большой прилив дофамина (множитель по размеру выигрыша)
+            if (GameEconomy.Instance != null)
+            {
+                float mult = matchThree ? 2.5f : 1.2f;
+                GameEconomy.Instance.AwardDopamine(GameEconomy.ActCasino, mult);
+            }
             ShowResult($"🎉 WIN! +{winAmount} DC 🎉", new Color(0.3f, 1f, 0.4f));
             yield return StartCoroutine(CelebrateReels(matchThree));
         }
         else
         {
+            // Даже проигрыш немного стимулирует — "почти получилось!"
+            if (GameEconomy.Instance != null)
+                GameEconomy.Instance.AwardDopamine(GameEconomy.ActCasino, 0.4f);
             ShowResult("No match. Try again!", new Color(1f, 0.5f, 0.5f));
         }
 

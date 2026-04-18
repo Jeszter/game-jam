@@ -347,6 +347,9 @@ public class PoliceChaseGame : MonoBehaviour
             {
                 nearMisses++;
                 score += 50;
+                // Near miss — сильный прилив дофамина + шанс на монеты
+                if (GameEconomy.Instance != null)
+                    GameEconomy.Instance.AwardDopamine(GameEconomy.ActPolice);
                 var nmObj = GameObject.Find("NearMiss");
                 if (nmObj != null)
                 {

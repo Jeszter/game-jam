@@ -317,11 +317,21 @@ public class KnifeHitGame : MonoBehaviour
         if (scoreText != null) scoreText.text = "SCORE " + score;
         UpdateKnivesLeft();
 
+        // Dopamine + chance for coin drop
+        if (GameEconomy.Instance != null)
+            GameEconomy.Instance.AwardDopamine(GameEconomy.ActKnife);
+
         // Reset ready knife
         readyKnife.anchoredPosition = startPos;
 
         if (knivesThrown >= knivesRequired)
         {
+            // Бонус за прохождение стадии — гарантированные монеты + доп. дофамин
+            if (GameEconomy.Instance != null)
+            {
+                GameEconomy.Instance.AwardDopamine(GameEconomy.ActKnife, 2f);
+                GameEconomy.Instance.AddCoins(15 + stage * 5);
+            }
             yield return new WaitForSeconds(0.4f);
             yield return StartCoroutine(StageCompleteFlash());
             StartStage(stage + 1);

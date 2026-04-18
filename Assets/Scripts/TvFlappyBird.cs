@@ -236,7 +236,13 @@ public class TvFlappyBird : MonoBehaviour
 
             float pipeX = child.localPosition.x;
             float prevX = pipeX + pipeSpeed * Time.deltaTime;
-            if (prevX >= px && pipeX < px) { score++; if (scoreText != null) scoreText.text = score.ToString(); }
+            if (prevX >= px && pipeX < px)
+            {
+                score++;
+                if (scoreText != null) scoreText.text = score.ToString();
+                if (GameEconomy.Instance != null)
+                    GameEconomy.Instance.AwardDopamine(GameEconomy.ActFlappy);
+            }
 
             float phw = pipeWidth / 2f;
             if (px + ph > pipeX - phw && px - ph < pipeX + phw)
