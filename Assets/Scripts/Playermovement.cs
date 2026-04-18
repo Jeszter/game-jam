@@ -25,12 +25,20 @@ public class PlayerMovement : MonoBehaviour
 
     [HideInInspector] public bool phoneLock = false;
 
+    [Header("Footsteps")]
+    public float footstepIntervalWalk = 0.5f;
+    public float footstepIntervalRun = 0.32f;
+    public float footstepIntervalCrouch = 0.7f;
+    [Range(0f, 1f)] public float footstepVolume = 0.55f;
+
     private CharacterController cc;
     private Transform           camTransform;
     private Vector3             velocity;
     private float               xRotation = 0f;
     private bool                isCrouching = false;
     private float               currentCamY;
+    private AudioSource         footstepSource;
+    private float               footstepTimer;
 
     private void Awake()
     {
@@ -48,6 +56,12 @@ public class PlayerMovement : MonoBehaviour
             cam.nearClipPlane = 0.15f;
         }
         currentCamY = cameraHeight;
+
+        // Footsteps audio source on the player (non-spatial — attached to listener)
+        footstepSource = gameObject.AddComponent<AudioSource>();
+        footstepSource.playOnAwake = false;
+        footstepSource.spatialBlend = 0f;
+        footstepSource.volume = footstepVolume;
     }
 
     private void OnEnable()
@@ -137,8 +151,11 @@ public class PlayerMovement : MonoBehaviour
         else if (run)        speed = runSpeed;
         else                 speed = walkSpeed;
 
-        Vector3 move = (transform.right * h + transform.forward * v).normalized;
+    Vector3 move = (transform.right * h + transform.forward * v).normalized;
         cc.Move(move * speed * Time.deltaTime);
+
+        // Footsteps
+        HandleFootsteps(move.sqrMagnitude > 0.01f, grounded, run);
 
         // стрибок не дозволяємо коли присів
         if (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame && grounded && !isCrouching)
@@ -146,6 +163,34 @@ public class PlayerMovement : MonoBehaviour
 
         velocity.y += gravity * Time.deltaTime;
         cc.Move(velocity * Time.deltaTime);
+    }
+
+    private void HandleFootsteps(bool moving, bool grounded, bool running)
+    {
+        if (footstepSource == null) return;
+
+        if (!moving || !grounded)
+        {
+            footstepTimer = 0f;
+            return;
+        }
+
+        float interval = isCrouching ? footstepIntervalCrouch
+                       : running     ? footstepIntervalRun
+                                     : footstepIntervalWalk;
+
+        footstepTimer += Time.deltaTime;
+        if (footstepTimer >= interval)
+        {
+            footstepTimer = 0f;
+            var sm = SoundManager.Instance;
+            var clip = sm != null ? sm.footstep : null;
+            if (clip != null)
+            {
+                footstepSource.pitch = Random.Range(0.92f, 1.08f);
+                footstepSource.PlayOneShot(clip, footstepVolume);
+            }
+        }
     }
 }
 

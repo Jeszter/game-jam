@@ -18,6 +18,7 @@ public class GamePhoneController : MonoBehaviour
     [SerializeField] private GameObject homeScreen;
     [SerializeField] private GameObject tikTokScreen;
     [SerializeField] private GameObject shopScreen;
+    [SerializeField] private GameObject knifeScreen;
 
     [Header("Animation")]
     [SerializeField] private float slideDuration = 0.35f;
@@ -26,15 +27,18 @@ public class GamePhoneController : MonoBehaviour
     [Header("Home Buttons")]
     [SerializeField] private Button tikTokButton;
     [SerializeField] private Button shopButton;
+    [SerializeField] private Button knifeButton;
     [SerializeField] private Button backButtonTikTok;
     [SerializeField] private Button backButtonShop;
+    [SerializeField] private Button backButtonKnife;
 
     private bool isOpen;
     private bool isAnimating;
     private Vector2 shownPosition;
     private Vector2 hiddenPosition;
+    private KnifeHitGame knifeGame;
 
-    private enum PhoneScreen { Home, TikTok, Shop }
+    private enum PhoneScreen { Home, TikTok, Shop, Knife }
     private PhoneScreen currentScreen = PhoneScreen.Home;
 
     void Start()
@@ -53,13 +57,38 @@ public class GamePhoneController : MonoBehaviour
             phoneCanvasGroup.blocksRaycasts = false;
         }
 
-        // Wire up buttons
-        if (tikTokButton != null) tikTokButton.onClick.AddListener(() => SwitchScreen(PhoneScreen.TikTok));
-        if (shopButton != null) shopButton.onClick.AddListener(() => SwitchScreen(PhoneScreen.Shop));
-        if (backButtonTikTok != null) backButtonTikTok.onClick.AddListener(() => SwitchScreen(PhoneScreen.Home));
-        if (backButtonShop != null) backButtonShop.onClick.AddListener(() => SwitchScreen(PhoneScreen.Home));
+        // Wire up buttons (with tap sfx)
+        if (tikTokButton != null) tikTokButton.onClick.AddListener(() => { PlayTap(); SwitchScreen(PhoneScreen.TikTok); });
+        if (shopButton != null) shopButton.onClick.AddListener(() => { PlayTap(); SwitchScreen(PhoneScreen.Shop); });
+        if (knifeButton != null) knifeButton.onClick.AddListener(() => { PlayTap(); OpenKnifeGame(); });
+        if (backButtonTikTok != null) backButtonTikTok.onClick.AddListener(() => { PlayTap(); SwitchScreen(PhoneScreen.Home); });
+        if (backButtonShop != null) backButtonShop.onClick.AddListener(() => { PlayTap(); SwitchScreen(PhoneScreen.Home); });
+        if (backButtonKnife != null) backButtonKnife.onClick.AddListener(() => { PlayTap(); CloseKnifeGame(); });
+
+        // Hook any other buttons inside phone (bottom nav, etc) to play tap
+        HookAllButtonsInPhone();
 
         SwitchScreen(PhoneScreen.Home);
+    }
+
+    private void HookAllButtonsInPhone()
+    {
+        if (phonePanel == null) return;
+        var buttons = phonePanel.GetComponentsInChildren<Button>(true);
+        foreach (var b in buttons)
+        {
+            // Avoid double-hook: only add if not already wired by explicit handlers above
+            if (b == tikTokButton || b == shopButton || b == knifeButton ||
+                b == backButtonTikTok || b == backButtonShop || b == backButtonKnife)
+                continue;
+            b.onClick.AddListener(PlayTap);
+        }
+    }
+
+    private void PlayTap()
+    {
+        var sm = SoundManager.Instance;
+        if (sm != null) sm.PlayPhoneTap();
     }
 
     void Update()
@@ -77,9 +106,9 @@ public class GamePhoneController : MonoBehaviour
     {
         if (isOpen || isAnimating) return;
         SwitchScreen(PhoneScreen.Home);
+        PlayTap();
         StartCoroutine(SlidePhone(true));
 
-        // Show cursor and disable camera look
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         SetPlayerLookEnabled(false);
@@ -88,9 +117,11 @@ public class GamePhoneController : MonoBehaviour
     public void ClosePhone()
     {
         if (!isOpen || isAnimating) return;
+        PlayTap();
+        // If knife game open, clean it up
+        CloseKnifeGame();
         StartCoroutine(SlidePhone(false));
 
-        // Hide cursor and re-enable camera look
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
         SetPlayerLookEnabled(true);
@@ -98,8 +129,6 @@ public class GamePhoneController : MonoBehaviour
 
     private void SetPlayerLookEnabled(bool enabled)
     {
-        // Disable/enable PlayerMovement mouse look by toggling the script
-        // We only want to stop looking, not moving, so we use a flag approach
         GameObject player = GameObject.Find("player");
         if (player != null)
         {
@@ -129,7 +158,6 @@ public class GamePhoneController : MonoBehaviour
         {
             elapsed += Time.unscaledDeltaTime;
             float t = elapsed / slideDuration;
-            // Smooth ease-out curve
             float smooth = 1f - Mathf.Pow(1f - t, 3f);
 
             if (phonePanel != null)
@@ -162,5 +190,31 @@ public class GamePhoneController : MonoBehaviour
         if (homeScreen != null) homeScreen.SetActive(screen == PhoneScreen.Home);
         if (tikTokScreen != null) tikTokScreen.SetActive(screen == PhoneScreen.TikTok);
         if (shopScreen != null) shopScreen.SetActive(screen == PhoneScreen.Shop);
+        if (knifeScreen != null) knifeScreen.SetActive(screen == PhoneScreen.Knife);
+    }
+
+    private void OpenKnifeGame()
+    {
+        if (knifeScreen == null) return;
+        SwitchScreen(PhoneScreen.Knife);
+
+        // Instantiate the game inside the knife screen
+        if (knifeGame == null)
+        {
+            knifeGame = knifeScreen.AddComponent<KnifeHitGame>();
+            knifeGame.Init(knifeScreen, CloseKnifeGame);
+        }
+    }
+
+    private void CloseKnifeGame()
+    {
+        if (knifeGame != null)
+        {
+            knifeGame.Cleanup();
+            Destroy(knifeGame);
+            knifeGame = null;
+        }
+        if (currentScreen == PhoneScreen.Knife)
+            SwitchScreen(PhoneScreen.Home);
     }
 }
