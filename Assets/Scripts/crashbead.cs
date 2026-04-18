@@ -2,310 +2,286 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
+/// <summary>
+/// Living wake-up cutscene for the player lying in bed.
+/// Sequence:
+///   1) Short blink (eyes open briefly, blink once)
+///   2) Pause with eyes open
+///   3) LONG sleep blink - eyes close and stay closed ~4s
+///   4) Eyes reopen slowly
+///   5) Look left, then right (look around the room)
+///   6) Short blink
+///   7) Sit up, then stand up and move to StandUpPoint
+/// Player controls are disabled during the cutscene.
+/// </summary>
+[DefaultExecutionOrder(-50)]
 public class BedWakeCutscene : MonoBehaviour
 {
-    [Header("Телефон")]
+    [Header("Target - where the player ends up after standing")]
+    public Transform standUpPoint;
+
+    [Header("Phone (optional)")]
     public Transform phone;
     public Transform phoneStartAnchor;
     public Transform lookTarget;
-
-    [Header("Куди встає гравець")]
-    [Tooltip("Empty біля ліжка на підлозі — де гравець буде стояти")]
-    public Transform standUpPoint;
-
-    [Header("Phone Near Face (local to Camera)")]
-    public Vector3 phoneNearFaceLocalPos   = new Vector3(0.18f, -0.10f, 0.38f);
+    public Vector3 phoneNearFaceLocalPos   = new Vector3(0.18f, -0.1f, 0.38f);
     public Vector3 phoneNearFaceLocalEuler = new Vector3(10f, 178f, 0f);
 
-    private Image          overlayImage;
-    private Transform      cam;
-    private Transform      nearFaceAnchor;
-    private PlayerMovement cachedMovement;
+    [Header("Blinking (eyelids)")]
+    [Tooltip("Quick blink before the long sleepy close")]
+    public float firstBlinkCloseTime = 0.12f;
+    public float firstBlinkHoldTime  = 0.08f;
+    public float firstBlinkOpenTime  = 0.15f;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    private void Start()
+    [Tooltip("Pause with eyes open between blinks")]
+    public float betweenBlinksDelay = 0.35f;
+
+    [Tooltip("Slow eyelid close (going back to sleep)")]
+    public float longBlinkCloseTime = 0.35f;
+    [Tooltip("How long eyes stay fully closed")]
+    public float longBlinkHoldTime  = 4.0f;
+    [Tooltip("Slow eyelid reopen")]
+    public float longBlinkOpenTime  = 0.6f;
+
+    [Header("Look around")]
+    public float lookSideAngle      = 35f;
+    public float lookToLeftTime     = 0.8f;
+    public float holdLeftTime       = 0.4f;
+    public float lookToRightTime    = 1.2f;
+    public float holdRightTime      = 0.4f;
+    public float lookBackCenterTime = 0.7f;
+
+    [Header("Standing up")]
+    [Tooltip("Time to rotate torso from lying to upright")]
+    public float sitUpDuration = 1.2f;
+    [Tooltip("Time to move from bed to StandUpPoint")]
+    public float standUpDuration = 1.1f;
+
+    [Header("Camera")]
+    [Tooltip("Final eye-level camera height")]
+    public float finalCameraHeight = 1.75f;
+    [Tooltip("Camera local offset while lying in bed")]
+    public Vector3 cameraLyingLocalOffset = new Vector3(0.08f, 0.0f, -0.33f);
+
+    private PlayerMovement      pm;
+    private CharacterController cc;
+    private Transform           camTransform;
+
+    private Canvas eyelidCanvas;
+    private Image  eyelidImage;
+
+    private void Awake()
     {
-        Camera child = GetComponentInChildren<Camera>(true);
-        cam = child != null ? child.transform : Camera.main?.transform;
+        pm = GetComponent<PlayerMovement>();
+        cc = GetComponent<CharacterController>();
 
-        if (cam == null)
+        Camera cam = GetComponentInChildren<Camera>();
+        if (cam != null) camTransform = cam.transform;
+
+        if (pm != null)
         {
-            Debug.LogError("[BedWakeCutscene] Camera not found!", this);
-            enabled = false;
-            return;
+            pm.phoneLock = true;
+            pm.enabled   = false;
         }
-
-        // вимикаємо рух
-        cachedMovement = GetComponent<PlayerMovement>();
-        if (cachedMovement != null) cachedMovement.enabled = false;
-
-        CreateUI();
-        PlacePhone();
-        nearFaceAnchor = BuildNearFaceAnchor();
-
-        StartCoroutine(WakeSequence());
-    }
-
-    private void CreateUI()
-    {
-        Canvas canvas = FindFirstObjectByType<Canvas>();
-        if (canvas == null)
-        {
-            GameObject go = new GameObject("Canvas");
-            canvas = go.AddComponent<Canvas>();
-            canvas.renderMode   = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 999;
-            go.AddComponent<CanvasScaler>();
-            go.AddComponent<GraphicRaycaster>();
-        }
-        GameObject ovGO = new GameObject("WakeOverlay");
-        ovGO.transform.SetParent(canvas.transform, false);
-        RectTransform rt = ovGO.AddComponent<RectTransform>();
-        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
-        overlayImage = ovGO.AddComponent<Image>();
-        overlayImage.color = Color.black;
-        overlayImage.raycastTarget = false;
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    private IEnumerator WakeSequence()
-    {
-        Vector3    basePos = cam.localPosition;
-        Quaternion baseRot = cam.localRotation;
-
-        // ── 1. Чорний екран ───────────────────────────────────────────────
-        overlayImage.color = Color.black;
-        yield return new WaitForSeconds(4f);
-
-        // ── 2. Перше кліпання ─────────────────────────────────────────────
-        yield return StartCoroutine(Fade(1f, 0f, 0.12f));
-        yield return StartCoroutine(SleepyLook(baseRot, 3.5f));
-        yield return StartCoroutine(Fade(0f, 1f, 0.10f));
-        yield return new WaitForSeconds(3.0f);
-
-        // ── 3. Прокидується ───────────────────────────────────────────────
-        yield return StartCoroutine(Fade(1f, 0f, 0.35f));
-        overlayImage.gameObject.SetActive(false);
-
-        // ── 4. Голова піднімається лежачи ─────────────────────────────────
-        yield return StartCoroutine(GroggyRise(basePos, baseRot));
-
-        // ── 5. Повертається до тумбочки ───────────────────────────────────
-        yield return StartCoroutine(TurnToNightstand());
-        yield return new WaitForSeconds(0.3f);
-
-        // ── 6. Бере телефон ───────────────────────────────────────────────
-        yield return StartCoroutine(ReachAndPickPhone());
-
-        yield return new WaitForSeconds(0.5f);
-
-        // ── 7. ВСТАЄ З ЛІЖКА ──────────────────────────────────────────────
-        yield return StartCoroutine(StandUpFromBed());
-
-        // ── 8. Вмикаємо рух ───────────────────────────────────────────────
-        if (cachedMovement != null) cachedMovement.enabled = true;
-        if (overlayImage != null) Destroy(overlayImage.gameObject, 1f);
+        if (cc != null) cc.enabled = false;
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;
+
+        SetupEyelidOverlay();
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    //  STEPS
-    // ═════════════════════════════════════════════════════════════════════════
-
-    private IEnumerator SleepyLook(Quaternion baseRot, float duration)
+    private void Start()
     {
-        float e = 0f;
-        while (e < duration)
-        {
-            e += Time.deltaTime;
-            float yaw   = Mathf.Sin(e * 1.1f)                * 0.7f;
-            float pitch = Mathf.Sin(e * 1.1f * 0.77f + 0.4f) * 0.45f;
-            float roll  = Mathf.Sin(e * 1.1f * 0.63f + 1.2f) * 0.35f;
-            float noise = (Mathf.PerlinNoise(e * 0.95f, 0.31f) - 0.5f) * 0.2f;
-            cam.localRotation = baseRot * Quaternion.Euler(pitch + noise, yaw, roll);
-            yield return null;
-        }
-        cam.localRotation = baseRot;
+        StartCoroutine(WakeUpRoutine());
     }
 
-    private IEnumerator GroggyRise(Vector3 startPos, Quaternion startRot)
+    // ---------- Eyelid overlay ----------
+
+    private void SetupEyelidOverlay()
     {
-        Vector3    endPos = startPos + new Vector3(0f, 0.18f, -0.05f);
-        Quaternion endRot = startRot * Quaternion.Euler(-10f, 0f, 1f);
+        GameObject go = new GameObject("EyelidOverlay");
+        go.transform.SetParent(transform, false);
 
-        float e = 0f;
-        while (e < 2.0f)
-        {
-            e += Time.deltaTime;
-            float t  = Mathf.Clamp01(e / 2.0f);
-            float ez = 1f - Mathf.Pow(1f - t, 3f);
-            cam.localPosition = Vector3.Lerp(startPos, endPos, Mathf.Clamp01(ez + Mathf.Sin(t * Mathf.PI) * 0.03f));
-            cam.localRotation = Quaternion.Slerp(startRot, endRot, ez);
-            yield return null;
-        }
-        cam.localPosition = endPos;
-        cam.localRotation = endRot;
+        eyelidCanvas = go.AddComponent<Canvas>();
+        eyelidCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+        eyelidCanvas.sortingOrder = 32000;
 
-        // тремтіння
-        e = 0f;
-        while (e < 0.6f)
-        {
-            e += Time.deltaTime;
-            float damp  = 1f - Mathf.Clamp01(e / 0.6f);
-            float nudge = Mathf.Sin(e * 18f) * 0.008f * damp;
-            cam.localPosition = endPos + new Vector3(0f, nudge * 0.5f, 0f);
-            cam.localRotation = endRot * Quaternion.Euler(nudge * 50f, 0f, nudge * 20f);
-            yield return null;
-        }
+        go.AddComponent<CanvasScaler>();
 
-        // дихання
-        e = 0f;
-        while (e < 2.0f)
-        {
-            e += Time.deltaTime;
-            float c = e * 2.0f;
-            cam.localPosition = endPos + new Vector3(0f, Mathf.Sin(c) * 0.008f, 0f);
-            cam.localRotation = endRot * Quaternion.Euler(Mathf.Sin(c + 0.3f) * 0.6f, 0f, 0f);
-            yield return null;
-        }
-        cam.localPosition = endPos;
-        cam.localRotation = endRot;
+        GameObject imgGo = new GameObject("Eyelid");
+        imgGo.transform.SetParent(go.transform, false);
+        eyelidImage = imgGo.AddComponent<Image>();
+        eyelidImage.color = Color.black;
+        eyelidImage.raycastTarget = false;
+
+        RectTransform rt = eyelidImage.rectTransform;
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+
+        SetEyelidAlpha(1f); // start with eyes closed
     }
 
-    private IEnumerator TurnToNightstand()
+    private void SetEyelidAlpha(float a)
     {
-        Vector3 tgt = lookTarget != null ? lookTarget.position :
-                      phone      != null ? phone.position      :
-                                          transform.position + transform.forward;
+        if (eyelidImage == null) return;
+        Color c = eyelidImage.color;
+        c.a = Mathf.Clamp01(a);
+        eyelidImage.color = c;
+    }
 
-        Quaternion from = cam.rotation;
-        Quaternion to   = Quaternion.LookRotation((tgt - cam.position).normalized, Vector3.up);
-
-        float e = 0f;
-        while (e < 2.8f)
+    private IEnumerator FadeEyelid(float from, float to, float time)
+    {
+        if (time <= 0f) { SetEyelidAlpha(to); yield break; }
+        float t = 0f;
+        while (t < time)
         {
-            e += Time.deltaTime;
-            float t  = Mathf.Clamp01(e / 2.8f);
-            float sm = t < 0.5f ? 2f * t * t : 1f - Mathf.Pow(-2f * t + 2f, 2f) / 2f;
-            cam.rotation = Quaternion.Slerp(from, to, sm);
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / time);
+            SetEyelidAlpha(Mathf.Lerp(from, to, k));
             yield return null;
         }
-        cam.rotation = to;
+        SetEyelidAlpha(to);
     }
 
-    private IEnumerator ReachAndPickPhone()
+    // ---------- Main routine ----------
+
+    private IEnumerator WakeUpRoutine()
     {
-        if (phone == null || nearFaceAnchor == null) yield break;
+        Vector3    startPos          = transform.position;
+        Quaternion startRot          = transform.rotation;
+        Vector3    camStartLocalPos  = camTransform != null ? camTransform.localPosition : cameraLyingLocalOffset;
+        Quaternion camStartLocalRot  = camTransform != null ? camTransform.localRotation : Quaternion.identity;
 
-        Vector3    sp = phone.position;
-        Quaternion sr = phone.rotation;
-        Vector3    ep = nearFaceAnchor.position;
-        Quaternion er = nearFaceAnchor.rotation;
+        Vector3    endPos = standUpPoint != null ? standUpPoint.position : startPos;
+        Quaternion endRot = standUpPoint != null
+            ? Quaternion.Euler(0f, standUpPoint.eulerAngles.y, 0f)
+            : Quaternion.Euler(0f, startRot.eulerAngles.y, 0f);
+        Vector3    camEndLocalPos = new Vector3(0f, finalCameraHeight, 0f);
+        Quaternion camEndLocalRot = Quaternion.identity;
 
-        float e = 0f;
-        while (e < 1.6f)
+        // 1) start closed, open eyes, quick blink
+        SetEyelidAlpha(1f);
+        yield return new WaitForSeconds(0.25f);
+        yield return FadeEyelid(1f, 0f, firstBlinkOpenTime);
+        yield return new WaitForSeconds(firstBlinkHoldTime);
+        yield return FadeEyelid(0f, 1f, firstBlinkCloseTime);
+        yield return FadeEyelid(1f, 0f, firstBlinkOpenTime);
+
+        yield return new WaitForSeconds(betweenBlinksDelay);
+
+        // 2) long sleepy close (~4s)
+        yield return FadeEyelid(0f, 1f, longBlinkCloseTime);
+        yield return new WaitForSeconds(longBlinkHoldTime);
+        yield return FadeEyelid(1f, 0f, longBlinkOpenTime);
+
+        yield return new WaitForSeconds(0.25f);
+
+        // 3) look around
+        yield return RotateCameraYaw(camStartLocalRot, -lookSideAngle, lookToLeftTime, 0f);
+        yield return new WaitForSeconds(holdLeftTime);
+        yield return RotateCameraYaw(camStartLocalRot, +lookSideAngle, lookToRightTime, -lookSideAngle);
+        yield return new WaitForSeconds(holdRightTime);
+        yield return RotateCameraYaw(camStartLocalRot, 0f, lookBackCenterTime, +lookSideAngle);
+
+        // 4) short blink before standing up
+        yield return FadeEyelid(0f, 1f, firstBlinkCloseTime);
+        yield return new WaitForSeconds(firstBlinkHoldTime);
+        yield return FadeEyelid(1f, 0f, firstBlinkOpenTime);
+
+        // 5) sit up (rotate torso upright in place)
+        Quaternion sittingRot     = Quaternion.Euler(0f, endRot.eulerAngles.y, 0f);
+        Vector3    camSittingLocal = Vector3.Lerp(camStartLocalPos, camEndLocalPos, 0.55f);
+
+        Quaternion rotBeforeSit      = transform.rotation;
+        Vector3    camLocalBeforeSit = camTransform != null ? camTransform.localPosition : camStartLocalPos;
+        Quaternion camRotBeforeSit   = camTransform != null ? camTransform.localRotation : Quaternion.identity;
+
+        float t = 0f;
+        while (t < sitUpDuration)
         {
-            e += Time.deltaTime;
-            float t      = Mathf.Clamp01(e / 1.6f);
-            float phoneT = 1f - Mathf.Pow(1f - t, 3f);
-            phone.position = Vector3.Lerp(sp, ep, phoneT);
-            phone.rotation = Quaternion.Slerp(sr, er, phoneT);
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / sitUpDuration);
+            float s = Ease(k);
+
+            transform.rotation = Quaternion.Slerp(rotBeforeSit, sittingRot, s);
+            if (camTransform != null)
+            {
+                camTransform.localPosition = Vector3.Lerp(camLocalBeforeSit, camSittingLocal, s);
+                camTransform.localRotation = Quaternion.Slerp(camRotBeforeSit, Quaternion.identity, s);
+            }
             yield return null;
         }
-        phone.SetPositionAndRotation(ep, er);
-        phone.SetParent(nearFaceAnchor, true);
-    }
 
-    /// Камера іде вгору як людина встає з ліжка
-    private IEnumerator StandUpFromBed()
-    {
-        float targetHeight = 1.7f;
-        if (cachedMovement != null) targetHeight = cachedMovement.cameraHeight;
+        // 6) stand up and walk to StandUpPoint
+        Vector3    standStartPos    = transform.position;
+        Quaternion standStartRot    = transform.rotation;
+        Vector3    camStandStartLoc = camTransform != null ? camTransform.localPosition : camSittingLocal;
+        Quaternion camStandStartRot = camTransform != null ? camTransform.localRotation : Quaternion.identity;
 
-        // ── затемнення щоб не бачив телепорт ─────────────────────────────
-        overlayImage.gameObject.SetActive(true);
-        yield return StartCoroutine(Fade(0f, 1f, 0.3f));
-
-        // ── телепорт до точки біля ліжка ─────────────────────────────────
-        if (standUpPoint != null)
+        t = 0f;
+        while (t < standUpDuration)
         {
-            CharacterController cc = GetComponent<CharacterController>();
-            if (cc != null) cc.enabled = false;
-            transform.position = standUpPoint.position;
-            transform.rotation = standUpPoint.rotation;
-            if (cc != null) cc.enabled = true;
-        }
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / standUpDuration);
+            float s = Ease(k);
 
-        // ставимо камеру низько — людина ще присіла
-        cam.localPosition = new Vector3(0f, 0.6f, 0f);
-        cam.localRotation = Quaternion.Euler(15f, 0f, 0f);
-
-        // ── розсвітлення ──────────────────────────────────────────────────
-        yield return StartCoroutine(Fade(1f, 0f, 0.4f));
-        overlayImage.gameObject.SetActive(false);
-
-        // ── плавний підйом камери вгору ───────────────────────────────────
-        Vector3    startPos = cam.localPosition;
-        Quaternion startRot = cam.localRotation;
-        Vector3    endPos   = new Vector3(0f, targetHeight, 0f);
-        Quaternion endRot   = Quaternion.identity;
-
-        float e = 0f;
-        while (e < 1.2f)
-        {
-            e += Time.deltaTime;
-            float t    = Mathf.Clamp01(e / 1.2f);
-            float ez   = 1f - Mathf.Pow(1f - t, 3f);
-            // легке хитання тіла
-            float sway = Mathf.Sin(t * Mathf.PI) * 0.008f;
-            cam.localPosition = Vector3.Lerp(startPos, endPos, ez)
-                                + new Vector3(sway, 0f, 0f);
-            cam.localRotation = Quaternion.Slerp(startRot, endRot, ez);
+            transform.position = Vector3.Lerp(standStartPos, endPos, s);
+            transform.rotation = Quaternion.Slerp(standStartRot, endRot, s);
+            if (camTransform != null)
+            {
+                camTransform.localPosition = Vector3.Lerp(camStandStartLoc, camEndLocalPos, s);
+                camTransform.localRotation = Quaternion.Slerp(camStandStartRot, camEndLocalRot, s);
+            }
             yield return null;
         }
-        cam.localPosition = endPos;
-        cam.localRotation = endRot;
+
+        // finalize
+        transform.position = endPos;
+        transform.rotation = endRot;
+        if (camTransform != null)
+        {
+            camTransform.localPosition = camEndLocalPos;
+            camTransform.localRotation = camEndLocalRot;
+        }
+
+        if (eyelidCanvas != null) Destroy(eyelidCanvas.gameObject);
+
+        if (cc != null) cc.enabled = true;
+        if (pm != null)
+        {
+            pm.enabled   = true;
+            pm.phoneLock = false;
+        }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    private IEnumerator Fade(float from, float to, float duration)
+    // ---------- Helpers ----------
+
+    private IEnumerator RotateCameraYaw(Quaternion baseRot, float toYaw, float time, float fromYaw)
     {
-        if (overlayImage == null) yield break;
-        float e = 0f;
-        while (e < duration)
+        if (camTransform == null) yield break;
+        float t = 0f;
+        while (t < time)
         {
-            e += Time.deltaTime;
-            overlayImage.color = new Color(0f, 0f, 0f,
-                Mathf.Lerp(from, to, Mathf.Clamp01(e / duration)));
+            t += Time.deltaTime;
+            float k = Mathf.Clamp01(t / time);
+            float s = Ease(k);
+            float yaw = Mathf.Lerp(fromYaw, toYaw, s);
+            camTransform.localRotation = baseRot * Quaternion.Euler(0f, yaw, 0f);
             yield return null;
         }
-        overlayImage.color = new Color(0f, 0f, 0f, to);
+        camTransform.localRotation = baseRot * Quaternion.Euler(0f, toYaw, 0f);
     }
 
-    private void PlacePhone()
+    private static float Ease(float x)
     {
-        if (phone == null) return;
-        if (phoneStartAnchor == null)
-        {
-            GameObject a = new GameObject("PhoneStartAnchor_Auto");
-            a.transform.SetPositionAndRotation(phone.position, phone.rotation);
-            phoneStartAnchor = a.transform;
-        }
-        phone.SetPositionAndRotation(phoneStartAnchor.position, phoneStartAnchor.rotation);
-        if (lookTarget == null) lookTarget = phoneStartAnchor;
-    }
-
-    private Transform BuildNearFaceAnchor()
-    {
-        Transform ex = cam.Find("PhoneNearFaceAnchor");
-        if (ex != null) return ex;
-        GameObject a = new GameObject("PhoneNearFaceAnchor");
-        a.transform.SetParent(cam, false);
-        a.transform.localPosition = phoneNearFaceLocalPos;
-        a.transform.localRotation = Quaternion.Euler(phoneNearFaceLocalEuler);
-        return a.transform;
+        return x < 0.5f
+            ? 2f * x * x
+            : 1f - Mathf.Pow(-2f * x + 2f, 2f) * 0.5f;
     }
 }
+
+
+
