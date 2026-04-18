@@ -126,9 +126,10 @@ public class TikTokFeedController : MonoBehaviour, IBeginDragHandler, IDragHandl
     private void Start()
     {
         loadedPostSprites = Resources.LoadAll<Sprite>("Posts");
+        Debug.Log($"[TikTok] Loaded {loadedPostSprites?.Length ?? 0} post sprites from Resources/Posts");
 
         if (posts.Count == 0)
-            GenerateInitialPosts(5);
+            GenerateInitialPosts();
 
         EnsureSwipeReceiver();
         ShowCurrentPost();
@@ -189,9 +190,10 @@ public class TikTokFeedController : MonoBehaviour, IBeginDragHandler, IDragHandl
         if (!isDragging || currentPostObject == null) return;
         currentDragDelta = eventData.position.y - dragStartY;
 
-        // Не даём тянуть назад, если мы на первом посте
-        if (currentDragDelta > 0f && currentPostIndex <= 0)
-            currentDragDelta = Mathf.Min(currentDragDelta * 0.25f, 60f); // резиновый эффект
+        // Не даём тянуть назад (вверх), если мы на первом посте
+        // Swipe down (delta > 0) = next, swipe up (delta < 0) = prev
+        if (currentDragDelta < 0f && currentPostIndex <= 0)
+            currentDragDelta = Mathf.Max(currentDragDelta * 0.25f, -60f); // резиновый эффект
 
         var rt = currentPostObject.GetComponent<RectTransform>();
         if (rt != null)
@@ -227,7 +229,8 @@ public class TikTokFeedController : MonoBehaviour, IBeginDragHandler, IDragHandl
             return;
         }
 
-        int dir = delta < 0f ? +1 : -1;
+        // Swipe down (delta > 0) = next post; swipe up (delta < 0) = prev post
+        int dir = delta > 0f ? +1 : -1;
         if (dir < 0 && currentPostIndex <= 0)
         {
             StartCoroutine(SnapBack());
@@ -335,7 +338,8 @@ public class TikTokFeedController : MonoBehaviour, IBeginDragHandler, IDragHandl
         if (postParent == null || postPrefabTemplate == null) return;
 
         // Определяем направление — если передан dir берём его, иначе по знаку currentDragDelta
-        int d = dir != 0 ? dir : (currentDragDelta < 0f ? +1 : -1);
+        // Swipe down (delta > 0) = next (+1), swipe up (delta < 0) = prev (-1)
+        int d = dir != 0 ? dir : (currentDragDelta > 0f ? +1 : -1);
 
         int targetIdx = currentPostIndex + (d > 0 ? 1 : -1);
         if (targetIdx < 0) return;
@@ -449,11 +453,46 @@ public class TikTokFeedController : MonoBehaviour, IBeginDragHandler, IDragHandl
 
     // ---------------- Generation ----------------
 
-    private void GenerateInitialPosts(int count)
+    private void GenerateInitialPosts()
     {
         posts.Clear();
-        for (int i = 0; i < count; i++)
-            posts.Add(GeneratePost(i));
+
+        // Сначала создаём по одному посту на КАЖДОЕ загруженное изображение
+        // в случайном порядке — чтобы все 13 картинок появились в ленте.
+        if (loadedPostSprites != null && loadedPostSprites.Length > 0)
+        {
+            var shuffled = new List<Sprite>(loadedPostSprites);
+            for (int i = shuffled.Count - 1; i > 0; i--)
+            {
+                int j = Random.Range(0, i + 1);
+                (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+            }
+            for (int i = 0; i < shuffled.Count; i++)
+                posts.Add(GeneratePostFromSprite(i, shuffled[i]));
+        }
+        else
+        {
+            // fallback: хоть сгенерируем текстовые
+            for (int i = 0; i < 5; i++)
+                posts.Add(GeneratePost(i));
+        }
+    }
+
+    /// <summary>Пост с конкретным спрайтом (каждое фото из Resources/Posts = отдельный tiktok).</summary>
+    private TikTokPost GeneratePostFromSprite(int index, Sprite sprite)
+    {
+        var post = new TikTokPost
+        {
+            username = GenerateUsername(),
+            likes = GenerateLikes(index),
+            hasImage = true,
+            postSprite = sprite,
+            bgColor = Color.black,
+            description = GenerateShortCaption()
+        };
+        post.comments = GenerateComments(post.likes);
+        post.shares = GenerateShares(post.likes);
+        return post;
     }
 
     private void AddGeneratedPost()

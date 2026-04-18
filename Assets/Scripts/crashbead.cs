@@ -2,18 +2,6 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Living wake-up cutscene for the player lying in bed.
-/// Sequence:
-///   1) Short blink (eyes open briefly, blink once)
-///   2) Pause with eyes open
-///   3) LONG sleep blink - eyes close and stay closed ~4s
-///   4) Eyes reopen slowly
-///   5) Look left, then right (look around the room)
-///   6) Short blink
-///   7) Sit up, then stand up and move to StandUpPoint
-/// Player controls are disabled during the cutscene.
-/// </summary>
 [DefaultExecutionOrder(-50)]
 public class BedWakeCutscene : MonoBehaviour
 {
@@ -28,19 +16,12 @@ public class BedWakeCutscene : MonoBehaviour
     public Vector3 phoneNearFaceLocalEuler = new Vector3(10f, 178f, 0f);
 
     [Header("Blinking (eyelids)")]
-    [Tooltip("Quick blink before the long sleepy close")]
     public float firstBlinkCloseTime = 0.12f;
     public float firstBlinkHoldTime  = 0.08f;
     public float firstBlinkOpenTime  = 0.15f;
-
-    [Tooltip("Pause with eyes open between blinks")]
     public float betweenBlinksDelay = 0.35f;
-
-    [Tooltip("Slow eyelid close (going back to sleep)")]
     public float longBlinkCloseTime = 0.35f;
-    [Tooltip("How long eyes stay fully closed")]
     public float longBlinkHoldTime  = 4.0f;
-    [Tooltip("Slow eyelid reopen")]
     public float longBlinkOpenTime  = 0.6f;
 
     [Header("Look around")]
@@ -52,16 +33,22 @@ public class BedWakeCutscene : MonoBehaviour
     public float lookBackCenterTime = 0.7f;
 
     [Header("Standing up")]
-    [Tooltip("Time to rotate torso from lying to upright")]
     public float sitUpDuration = 1.2f;
-    [Tooltip("Time to move from bed to StandUpPoint")]
     public float standUpDuration = 1.1f;
 
     [Header("Camera")]
-    [Tooltip("Final eye-level camera height")]
     public float finalCameraHeight = 1.75f;
-    [Tooltip("Camera local offset while lying in bed")]
     public Vector3 cameraLyingLocalOffset = new Vector3(0.08f, 0.0f, -0.33f);
+
+    [Header("Voice Lines")]
+    [Tooltip("Категория фраз при долгом закрытии глаз (groggy/стон)")]
+    public string voiceGroggy = "groggy";
+    [Tooltip("Категория фраз когда осматривается")]
+    public string voiceLookAround = "look_around";
+    [Tooltip("Категория фраз когда сел/встаёт")]
+    public string voiceSitUp = "sit_up";
+    [Tooltip("Категория фраз когда встал окончательно")]
+    public string voiceStoodUp = "stood_up";
 
     private PlayerMovement      pm;
     private CharacterController cc;
@@ -96,8 +83,6 @@ public class BedWakeCutscene : MonoBehaviour
         StartCoroutine(WakeUpRoutine());
     }
 
-    // ---------- Eyelid overlay ----------
-
     private void SetupEyelidOverlay()
     {
         GameObject go = new GameObject("EyelidOverlay");
@@ -121,7 +106,7 @@ public class BedWakeCutscene : MonoBehaviour
         rt.offsetMin = Vector2.zero;
         rt.offsetMax = Vector2.zero;
 
-        SetEyelidAlpha(1f); // start with eyes closed
+        SetEyelidAlpha(1f);
     }
 
     private void SetEyelidAlpha(float a)
@@ -146,7 +131,11 @@ public class BedWakeCutscene : MonoBehaviour
         SetEyelidAlpha(to);
     }
 
-    // ---------- Main routine ----------
+    private void PlayVoice(string category)
+    {
+        if (VoiceManager.Instance != null && !string.IsNullOrEmpty(category))
+            VoiceManager.Instance.Play(category);
+    }
 
     private IEnumerator WakeUpRoutine()
     {
@@ -172,14 +161,16 @@ public class BedWakeCutscene : MonoBehaviour
 
         yield return new WaitForSeconds(betweenBlinksDelay);
 
-        // 2) long sleepy close (~4s)
+        // 2) long sleepy close — играем groggy фразу ("ugh..." / "five more minutes")
+        PlayVoice(voiceGroggy);
         yield return FadeEyelid(0f, 1f, longBlinkCloseTime);
         yield return new WaitForSeconds(longBlinkHoldTime);
         yield return FadeEyelid(1f, 0f, longBlinkOpenTime);
 
         yield return new WaitForSeconds(0.25f);
 
-        // 3) look around
+        // 3) look around — "what time is it..." / "another day..."
+        PlayVoice(voiceLookAround);
         yield return RotateCameraYaw(camStartLocalRot, -lookSideAngle, lookToLeftTime, 0f);
         yield return new WaitForSeconds(holdLeftTime);
         yield return RotateCameraYaw(camStartLocalRot, +lookSideAngle, lookToRightTime, -lookSideAngle);
@@ -191,7 +182,9 @@ public class BedWakeCutscene : MonoBehaviour
         yield return new WaitForSeconds(firstBlinkHoldTime);
         yield return FadeEyelid(1f, 0f, firstBlinkOpenTime);
 
-        // 5) sit up (rotate torso upright in place)
+        // 5) sit up — "alright..." / "come on..."
+        PlayVoice(voiceSitUp);
+
         Quaternion sittingRot     = Quaternion.Euler(0f, endRot.eulerAngles.y, 0f);
         Vector3    camSittingLocal = Vector3.Lerp(camStartLocalPos, camEndLocalPos, 0.55f);
 
@@ -215,7 +208,7 @@ public class BedWakeCutscene : MonoBehaviour
             yield return null;
         }
 
-        // 6) stand up and walk to StandUpPoint
+        // 6) stand up and walk
         Vector3    standStartPos    = transform.position;
         Quaternion standStartRot    = transform.rotation;
         Vector3    camStandStartLoc = camTransform != null ? camTransform.localPosition : camSittingLocal;
@@ -255,9 +248,10 @@ public class BedWakeCutscene : MonoBehaviour
             pm.enabled   = true;
             pm.phoneLock = false;
         }
-    }
 
-    // ---------- Helpers ----------
+        // 7) фраза когда окончательно встал
+        PlayVoice(voiceStoodUp);
+    }
 
     private IEnumerator RotateCameraYaw(Quaternion baseRot, float toYaw, float time, float fromYaw)
     {
@@ -282,6 +276,4 @@ public class BedWakeCutscene : MonoBehaviour
             : 1f - Mathf.Pow(-2f * x + 2f, 2f) * 0.5f;
     }
 }
-
-
 

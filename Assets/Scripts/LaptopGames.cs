@@ -11,6 +11,11 @@ public class LaptopGames : MonoBehaviour
 {
     public float interactDistance = 3f;
 
+    [Header("Game Icons (assign in Inspector)")]
+    public Sprite iconSubwaySurf;
+    public Sprite iconPoliceChase;
+    public Sprite iconCasino;
+
     private Camera playerCam;
     private GameObject playerObj;
     private MonoBehaviour[] disabledScripts;
@@ -138,17 +143,17 @@ public class LaptopGames : MonoBehaviour
         MakeAppIcon(canvasObj.transform, "App1", "🏃", "[1]  SUBWAY SURFER",
             "Endless runner — dodge obstacles",
             new Vector2(0.2f, 0.45f), new Color(0.2f, 1f, 0.4f),
-            () => LaunchGame(1));
+            () => LaunchGame(1), iconSubwaySurf);
 
         MakeAppIcon(canvasObj.transform, "App2", "🚓", "[2]  POLICE CHASE",
             "Race through traffic — escape the cops",
             new Vector2(0.5f, 0.45f), new Color(1f, 0.3f, 0.3f),
-            () => LaunchGame(2));
+            () => LaunchGame(2), iconPoliceChase);
 
         MakeAppIcon(canvasObj.transform, "App3", "🎰", "[3]  DOOM CASINO",
             "Slot machine — bet your DC coins",
             new Vector2(0.8f, 0.45f), new Color(1f, 0.85f, 0.2f),
-            () => LaunchGame(3));
+            () => LaunchGame(3), iconCasino);
 
         // Exit hint
         MakeLabel(canvasObj.transform, "Exit", "E / ESC — back to room", 26,
@@ -250,7 +255,7 @@ public class LaptopGames : MonoBehaviour
     }
 
     void MakeAppIcon(Transform parent, string name, string emoji, string label, string desc,
-        Vector2 anchor, Color accent, System.Action onClick)
+        Vector2 anchor, Color accent, System.Action onClick, Sprite iconSprite = null)
     {
         // Button panel
         var panel = new GameObject(name);
@@ -286,18 +291,37 @@ public class LaptopGames : MonoBehaviour
         srt.sizeDelta = new Vector2(0, 8);
         srt.anchoredPosition = Vector2.zero;
 
-        // Emoji icon
-        var iconObj = new GameObject("Icon");
-        iconObj.transform.SetParent(panel.transform);
-        var iconTmp = iconObj.AddComponent<TextMeshProUGUI>();
-        iconTmp.text = emoji;
-        iconTmp.fontSize = 180;
-        iconTmp.alignment = TextAlignmentOptions.Center;
-        iconTmp.color = Color.white;
-        if (font != null) iconTmp.font = font;
-        var irt = iconObj.GetComponent<RectTransform>();
-        irt.anchorMin = new Vector2(0, 0.4f); irt.anchorMax = new Vector2(1, 0.95f);
-        irt.offsetMin = Vector2.zero; irt.offsetMax = Vector2.zero;
+        // Icon — use sprite image if assigned, otherwise fallback to emoji text
+        if (iconSprite != null)
+        {
+            var iconObj = new GameObject("Icon");
+            iconObj.transform.SetParent(panel.transform);
+            var iconImg = iconObj.AddComponent<Image>();
+            iconImg.sprite = iconSprite;
+            iconImg.preserveAspect = true;
+            iconImg.raycastTarget = false;
+            var irt = iconObj.GetComponent<RectTransform>();
+            irt.anchorMin = new Vector2(0.05f, 0.38f);
+            irt.anchorMax = new Vector2(0.95f, 0.95f);
+            irt.offsetMin = Vector2.zero;
+            irt.offsetMax = Vector2.zero;
+        }
+        else
+        {
+            var iconObj = new GameObject("Icon");
+            iconObj.transform.SetParent(panel.transform);
+            var iconTmp = iconObj.AddComponent<TextMeshProUGUI>();
+            iconTmp.text = emoji;
+            iconTmp.fontSize = 180;
+            iconTmp.alignment = TextAlignmentOptions.Center;
+            iconTmp.color = Color.white;
+            if (font != null) iconTmp.font = font;
+            var irt = iconObj.GetComponent<RectTransform>();
+            irt.anchorMin = new Vector2(0, 0.4f);
+            irt.anchorMax = new Vector2(1, 0.95f);
+            irt.offsetMin = Vector2.zero;
+            irt.offsetMax = Vector2.zero;
+        }
 
         // Label
         var labelObj = new GameObject("Label");

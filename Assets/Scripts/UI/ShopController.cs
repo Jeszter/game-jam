@@ -24,7 +24,18 @@ public class ShopController : MonoBehaviour
         public float dopamineGain = 15f;
         [Tooltip("Еда — можно покупать повторно, респавнит объект на сцене")]
         public bool isRestockable = false;
+        [Tooltip("Кулдаун между покупками (сек). Работает только для isRestockable.")]
+        public float cooldownSeconds = 5f;
         [HideInInspector] public bool purchased = false;
+        [HideInInspector] public float nextAvailableTime = 0f;
+
+        // Оригинальная точка спавна еды — запоминается при первом поиске,
+        // чтобы все клоны появлялись там же где лежала еда изначально.
+        [HideInInspector] public Vector3 spawnPosition;
+        [HideInInspector] public Quaternion spawnRotation = Quaternion.identity;
+        [HideInInspector] public Transform spawnParent;
+        [HideInInspector] public GameObject originalPrefabRef;
+        [HideInInspector] public bool spawnPointCached = false;
     }
 
     [SerializeField] private List<ShopItem> items = new List<ShopItem>();
@@ -33,25 +44,81 @@ public class ShopController : MonoBehaviour
     private Dictionary<int, TMP_Text> itemButtonTexts = new Dictionary<int, TMP_Text>();
     private Dictionary<int, TMP_Text> itemPriceTexts = new Dictionary<int, TMP_Text>();
 
+    /// <summary>Перевірити чи куплено предмет по назві (для витратних — чи хоч раз куплений).</summary>
+    public bool IsPurchased(string itemName)
+    {
+        foreach (var it in items)
+        {
+            if (it.itemName == itemName)
+            {
+                if (it.isRestockable)
+                    return it.nextAvailableTime > 0f || it.purchased;
+                return it.purchased;
+            }
+        }
+        return false;
+    }
+
     void Start()
     {
         if (items.Count == 0)
             GenerateDefaultItems();
 
-        // Hide all non-food "unlockable" objects at start if not yet purchased.
-        // ЕДА (isRestockable) — на старте активна (лежит на кухне).
+        // Кешируем точку спавна для еды + прячем ключевые объекты (Laptop/TV) если не куплены
         foreach (var item in items)
         {
-            if (item.isRestockable) continue;
-            if (!item.purchased && !string.IsNullOrEmpty(item.unlockObjectPath))
+            if (string.IsNullOrEmpty(item.unlockObjectPath)) continue;
+            var go = FindAnyByPath(item.unlockObjectPath);
+            if (go == null) continue;
+
+            if (item.isRestockable)
             {
-                var go = GameObject.Find(item.unlockObjectPath);
-                if (go == null) go = FindInactiveByPath(item.unlockObjectPath);
-                if (go != null) go.SetActive(false);
+                // ЕДА — запоминаем позицию чтобы все будущие клоны появлялись тут же
+                CacheFoodSpawnPoint(item, go);
+            }
+            else
+            {
+                if (!item.purchased) go.SetActive(false);
             }
         }
 
         BuildShop();
+    }
+
+    void Update()
+    {
+        // Обновляем тексты кулдаунов каждый кадр (без создания UI каждый раз)
+        for (int i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (!item.isRestockable) continue;
+            if (!itemButtons.TryGetValue(i, out var btn) || btn == null) continue;
+            if (!itemButtonTexts.TryGetValue(i, out var btnText) || btnText == null) continue;
+
+            float remaining = item.nextAvailableTime - Time.time;
+            if (remaining > 0f)
+            {
+                btn.interactable = false;
+                btnText.text = Mathf.CeilToInt(remaining) + "s";
+                btnText.color = new Color(1f, 0.5f, 0.3f);
+            }
+            else
+            {
+                btn.interactable = true;
+                btnText.text = "BUY";
+                btnText.color = Color.white;
+            }
+        }
+    }
+
+    private void CacheFoodSpawnPoint(ShopItem item, GameObject original)
+    {
+        if (item.spawnPointCached) return;
+        item.spawnPosition = original.transform.position;
+        item.spawnRotation = original.transform.rotation;
+        item.spawnParent = original.transform.parent;
+        item.originalPrefabRef = original;
+        item.spawnPointCached = true;
     }
 
     private void GenerateDefaultItems()
@@ -74,48 +141,77 @@ public class ShopController : MonoBehaviour
             dopamineGain = 15f
         });
 
-        // Regular consumables
-        items.Add(new ShopItem { itemName = "Vape", emoji = "~", price = 50, description = "+5 Dopamine, -10 Health", dopamineGain = 10f });
+        // Regular consumables — restockable so player can repeatedly get dopamine hit
+        items.Add(new ShopItem {
+            itemName = "Vape",
+            emoji = "~",
+            price = 50,
+            description = "Buy once, press V anywhere to puff (+35 DP, 8s cd)",
+            dopamineGain = 35f,
+            isRestockable = true,
+            cooldownSeconds = 8f
+        });
+        items.Add(new ShopItem {
+            itemName = "IQOS",
+            emoji = "🚬",
+            price = 70,
+            description = "Buy once, press Q anywhere to smoke (+45 DP, 10s cd)",
+            dopamineGain = 45f,
+            isRestockable = true,
+            cooldownSeconds = 10f
+        });
         items.Add(new ShopItem { itemName = "Music", emoji = "#", price = 30, description = "Lo-fi beats to scroll to", dopamineGain = 8f });
         items.Add(new ShopItem { itemName = "Phone+", emoji = "+", price = 500, description = "Faster scrolling speed", dopamineGain = 5f });
-        items.Add(new ShopItem { itemName = "Energy", emoji = "!", price = 75, description = "+20 Dopamine boost", dopamineGain = 20f });
+        items.Add(new ShopItem {
+            itemName = "Energy",
+            emoji = "!",
+            price = 75,
+            description = "Energy drink — +30 dopamine (6s cd)",
+            dopamineGain = 30f,
+            isRestockable = true,
+            cooldownSeconds = 6f
+        });
 
         // ЕДА — респавнится на кухне. unlockObjectPath должен совпадать с путём к FoodItem на сцене.
         items.Add(new ShopItem {
             itemName = "Pizza",
             emoji = "🍕",
             price = 40,
-            description = "Restock pizza in the kitchen (+hunger)",
+            description = "Order pizza — shows up on kitchen table (8s cooldown)",
             unlockObjectPath = "House/Food/Pizza",
             dopamineGain = 5f,
-            isRestockable = true
+            isRestockable = true,
+            cooldownSeconds = 8f
         });
         items.Add(new ShopItem {
             itemName = "Burger",
             emoji = "🍔",
             price = 30,
-            description = "Restock burger (+hunger)",
+            description = "Order burger (7s cooldown)",
             unlockObjectPath = "House/Food/Burger",
             dopamineGain = 5f,
-            isRestockable = true
+            isRestockable = true,
+            cooldownSeconds = 7f
         });
         items.Add(new ShopItem {
             itemName = "Soda",
             emoji = "🥤",
             price = 20,
-            description = "Restock soda (+hunger)",
+            description = "Order soda (5s cooldown)",
             unlockObjectPath = "House/Food/Soda",
             dopamineGain = 3f,
-            isRestockable = true
+            isRestockable = true,
+            cooldownSeconds = 5f
         });
         items.Add(new ShopItem {
             itemName = "Apple",
             emoji = "🍎",
             price = 15,
-            description = "Restock healthy snack",
+            description = "Order apple (4s cooldown)",
             unlockObjectPath = "House/Food/Apple",
             dopamineGain = 2f,
-            isRestockable = true
+            isRestockable = true,
+            cooldownSeconds = 4f
         });
     }
 
@@ -160,7 +256,11 @@ public class ShopController : MonoBehaviour
                 itemButtons[i] = buyBtn;
 
                 var btnText = buyBtn.GetComponentInChildren<TMP_Text>();
-                if (btnText != null) itemButtonTexts[i] = btnText;
+                if (btnText != null)
+                {
+                    itemButtonTexts[i] = btnText;
+                    btnText.text = "BUY";
+                }
 
                 // Highlight unlockable items
                 if (!string.IsNullOrEmpty(items[i].unlockObjectPath))
@@ -183,6 +283,15 @@ public class ShopController : MonoBehaviour
 
         if (hudController == null) return;
 
+        // Кулдаун для еды
+        if (item.isRestockable && Time.time < item.nextAvailableTime)
+        {
+            if (itemPriceTexts.TryGetValue(index, out var priceTxt))
+                StartCoroutine(FlashText(priceTxt, new Color(1f, 0.5f, 0.2f)));
+            Debug.Log($"[Shop] {item.itemName} on cooldown ({item.nextAvailableTime - Time.time:F1}s)");
+            return;
+        }
+
         if (!hudController.SpendCoins(item.price))
         {
             // Flash red
@@ -193,21 +302,32 @@ public class ShopController : MonoBehaviour
         }
 
         hudController.AddDopamine(item.dopamineGain);
-        if (!item.isRestockable) item.purchased = true;
+        // Завжди відзначаємо хоч один успішний бай (щоб IsPurchased працювало для витратних)
+        item.purchased = true;
 
-        // Unlock the associated game object
-        if (!string.IsNullOrEmpty(item.unlockObjectPath))
+        // Unlock / spawn the associated game object
+        if (item.isRestockable)
         {
-            var go = GameObject.Find(item.unlockObjectPath);
-            if (go == null)
-            {
-                // Try searching inactive objects in all scenes
-                go = FindInactiveByPath(item.unlockObjectPath);
-            }
+            // Spawn associated food if configured, otherwise it's a consumable (vape/iqos/energy)
+            if (!string.IsNullOrEmpty(item.unlockObjectPath))
+                SpawnOrRestoreFood(item);
+            else
+                PlayConsumableEffect(item);
+
+            item.nextAvailableTime = Time.time + item.cooldownSeconds;
+            FlashGreen(index);
+        }
+        else if (!string.IsNullOrEmpty(item.unlockObjectPath))
+        {
+            GameObject go = FindAnyByPath(item.unlockObjectPath);
             if (go != null)
             {
                 go.SetActive(true);
-                Debug.Log($"[Shop] Unlocked {item.unlockObjectPath}");
+                SpawnPurchaseFx(go.transform.position + Vector3.up * 0.4f);
+                Debug.Log($"[Shop] Unlocked {item.unlockObjectPath} at {go.transform.position}");
+
+                if (VictoryManager.Instance != null)
+                    VictoryManager.Instance.ReportItemPurchased(item.itemName);
             }
             else
             {
@@ -217,9 +337,52 @@ public class ShopController : MonoBehaviour
 
         if (!item.isRestockable)
             MarkAsPurchased(index);
-        else
-            FlashGreen(index);
+
         Debug.Log($"Bought {item.itemName} for {item.price} DC");
+    }
+
+    /// <summary>
+    /// Еда всегда появляется на КОНКРЕТНОЙ позиции на столе:
+    /// - если оригинал (или какой-то уже заспавненный клон) неактивен на этой позиции — активируем его,
+    /// - иначе создаём новый клон в той же точке, с микро-вариацией высоты чтобы не z-fighting.
+    /// </summary>
+    private void SpawnOrRestoreFood(ShopItem item)
+    {
+        // Убедимся что точка спавна закеширована
+        if (!item.spawnPointCached)
+        {
+            var original = FindAnyByPath(item.unlockObjectPath);
+            if (original != null) CacheFoodSpawnPoint(item, original);
+        }
+
+        // Попробуем переактивировать оригинал если он сейчас выключен
+        if (item.originalPrefabRef != null && !item.originalPrefabRef.activeSelf)
+        {
+            item.originalPrefabRef.transform.position = item.spawnPosition;
+            item.originalPrefabRef.transform.rotation = item.spawnRotation;
+            item.originalPrefabRef.SetActive(true);
+            SpawnPurchaseFx(item.spawnPosition + Vector3.up * 0.4f);
+            Debug.Log($"[Shop] Restored original {item.itemName} at {item.spawnPosition}");
+            return;
+        }
+
+        // Иначе спавним клон точно в ту же позицию, лишь чуть выше чтобы
+        // не было z-fighting с другой едой; FoodItem коллайдер поднят физикой если надо.
+        if (item.originalPrefabRef == null)
+        {
+            Debug.LogWarning($"[Shop] No reference to spawn {item.itemName}");
+            return;
+        }
+
+        // Если оригинал активен — используем его как прототип
+        var clone = Instantiate(item.originalPrefabRef,
+                                item.spawnPosition,
+                                item.spawnRotation,
+                                item.spawnParent);
+        clone.name = item.itemName + "_Restock";
+        clone.SetActive(true);
+        SpawnPurchaseFx(item.spawnPosition + Vector3.up * 0.4f);
+        Debug.Log($"[Shop] Spawned {item.itemName} clone at {item.spawnPosition}");
     }
 
     private void FlashGreen(int index)
@@ -259,6 +422,171 @@ public class ShopController : MonoBehaviour
             if (found != null) return found.gameObject;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Надёжный поиск: пробует GameObject.Find, затем рекурсивный
+    /// обход всех корней сцены (с неактивными), затем fallback-поиск
+    /// по последнему сегменту пути (на случай если кто-то переименовал).
+    /// </summary>
+    private GameObject FindAnyByPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        var go = GameObject.Find(path);
+        if (go != null) return go;
+        go = FindInactiveByPath(path);
+        if (go != null) return go;
+
+        // Fallback: поиск по имени последнего сегмента
+        var parts = path.Split('/');
+        string leaf = parts[parts.Length - 1];
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            var t = FindByName(root.transform, leaf);
+            if (t != null) return t.gameObject;
+        }
+        return null;
+    }
+
+    private Transform FindByName(Transform root, string name)
+    {
+        if (root.name == name) return root;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            var r = FindByName(root.GetChild(i), name);
+            if (r != null) return r;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Ефект "вживання" витратного товару (вейп/IQOS/енергетик) —
+    /// хмарка диму над гравцем + floating text із дофаміном.
+    /// </summary>
+    private void PlayConsumableEffect(ShopItem item)
+    {
+        // Знайти гравця
+        var player = GameObject.Find("player");
+        Vector3 pos;
+        if (player != null)
+            pos = player.transform.position + Vector3.up * 1.7f;
+        else
+            pos = Camera.main != null
+                ? Camera.main.transform.position + Camera.main.transform.forward * 1.2f
+                : Vector3.up * 1.8f;
+
+        Color color;
+        switch (item.itemName)
+        {
+            case "IQOS":  color = new Color(0.9f, 0.85f, 0.95f, 1f); break; // білий дим
+            case "Vape":  color = new Color(0.7f, 1f, 0.9f, 1f);     break; // м'ятний
+            case "Energy":color = new Color(1f, 0.6f, 0.2f, 1f);     break; // помаранчевий буст
+            default:      color = new Color(1f, 0.9f, 0.5f, 1f);     break;
+        }
+
+        StartCoroutine(SmokeBurst(pos, color));
+
+        // Floating text "+X DP"
+        CoinFloater.Spawn(Mathf.RoundToInt(item.dopamineGain));
+
+        Debug.Log($"[Shop] Consumed {item.itemName} — +{item.dopamineGain} dopamine");
+    }
+
+    private System.Collections.IEnumerator SmokeBurst(Vector3 worldPos, Color tint)
+    {
+        int puffs = 8;
+        var objs = new GameObject[puffs];
+        var mats = new Material[puffs];
+        Shader unlitShader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (unlitShader == null) unlitShader = Shader.Find("Unlit/Color");
+
+        for (int i = 0; i < puffs; i++)
+        {
+            var s = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            s.name = "SmokePuff";
+            var col = s.GetComponent<Collider>();
+            if (col != null) Destroy(col);
+            s.transform.position = worldPos + Random.insideUnitSphere * 0.2f;
+            s.transform.localScale = Vector3.one * Random.Range(0.18f, 0.32f);
+            var m = new Material(unlitShader);
+            m.color = tint;
+            s.GetComponent<MeshRenderer>().material = m;
+            s.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            objs[i] = s;
+            mats[i] = m;
+        }
+
+        float dur = 1.2f;
+        float t = 0f;
+        var dirs = new Vector3[puffs];
+        for (int i = 0; i < puffs; i++)
+        {
+            dirs[i] = new Vector3(
+                Random.Range(-0.4f, 0.4f),
+                Random.Range(0.5f, 1.2f),
+                Random.Range(-0.4f, 0.4f));
+        }
+
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float k = t / dur;
+            for (int i = 0; i < puffs; i++)
+            {
+                if (objs[i] == null) continue;
+                objs[i].transform.position += dirs[i] * Time.deltaTime * 0.6f;
+                objs[i].transform.localScale += Vector3.one * Time.deltaTime * 0.35f;
+                var c = mats[i].color;
+                c.a = 1f - k;
+                mats[i].color = c;
+            }
+            yield return null;
+        }
+        for (int i = 0; i < puffs; i++)
+            if (objs[i] != null) Destroy(objs[i]);
+    }
+
+    /// <summary>Короткий "ping" эффект: жёлтая сфера, которая разрастается и исчезает.</summary>
+    private void SpawnPurchaseFx(Vector3 worldPos)
+    {
+        var fx = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        fx.name = "ShopPurchaseFx";
+        var col = fx.GetComponent<Collider>();
+        if (col != null) Destroy(col);
+        fx.transform.position = worldPos;
+        fx.transform.localScale = Vector3.one * 0.2f;
+
+        var mr = fx.GetComponent<MeshRenderer>();
+        if (mr != null)
+        {
+            var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            if (mat.shader == null) mat = new Material(Shader.Find("Unlit/Color"));
+            mat.color = new Color(1f, 0.85f, 0.25f, 1f);
+            mr.material = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+        }
+        StartCoroutine(FxAnim(fx));
+    }
+
+    private System.Collections.IEnumerator FxAnim(GameObject fx)
+    {
+        float t = 0f;
+        float dur = 0.6f;
+        Vector3 startScale = fx.transform.localScale;
+        var mr = fx.GetComponent<MeshRenderer>();
+        Color baseCol = mr != null ? mr.material.color : Color.yellow;
+        while (t < dur && fx != null)
+        {
+            t += Time.deltaTime;
+            float k = t / dur;
+            fx.transform.localScale = startScale + Vector3.one * (k * 1.2f);
+            if (mr != null)
+                mr.material.color = new Color(baseCol.r, baseCol.g, baseCol.b, 1f - k);
+            yield return null;
+        }
+        if (fx != null) Destroy(fx);
     }
 
     private Transform FindRecursive(Transform root, string path)

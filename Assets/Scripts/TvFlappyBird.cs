@@ -30,16 +30,35 @@ public class TvFlappyBird : MonoBehaviour
     private float playerVelocityY = 0f;
     private Vector3 playerStartPos;
 
+    // Кулдаун на нажатие E (чтобы при выходе не триггерилась снова активация)
+    private float interactionCooldown = 0f;
+
     private GameObject playerObj;
     private MonoBehaviour[] disabledScripts;
 
     Camera FindPlayerCam()
     {
-        if (playerObj == null) playerObj = GameObject.Find("player");
+        if (playerObj == null)
+        {
+            playerObj = GameObject.Find("player");
+            if (playerObj == null) playerObj = GameObject.Find("Player");
+            if (playerObj == null)
+            {
+                var tagged = GameObject.FindGameObjectWithTag("Player");
+                if (tagged != null) playerObj = tagged;
+            }
+        }
         if (playerObj != null)
         {
-            var c = playerObj.GetComponentInChildren<Camera>();
-            if (c != null) return c;
+            // Ищем только АКТИВНУЮ камеру внутри player
+            var cams = playerObj.GetComponentsInChildren<Camera>(false);
+            foreach (var c in cams)
+            {
+                if (c != null && c.gameObject.activeInHierarchy) return c;
+            }
+            // Если активной нет, берём любую (даже неактивную)
+            var anyCam = playerObj.GetComponentInChildren<Camera>(true);
+            if (anyCam != null) return anyCam;
         }
         return Camera.main;
     }
@@ -47,11 +66,27 @@ public class TvFlappyBird : MonoBehaviour
     void Start()
     {
         playerCam = FindPlayerCam();
+
+        // Проверка коллайдера на TV
+        var col = GetComponent<Collider>();
+        if (col == null) col = GetComponentInChildren<Collider>();
+        if (col == null)
+        {
+            Debug.LogWarning("[TvFlappyBird] На TV не было Collider — добавляю BoxCollider автоматически. Настрой его размер!", gameObject);
+            gameObject.AddComponent<BoxCollider>();
+        }
     }
 
     void Update()
     {
         if (Keyboard.current == null) return;
+
+        // Уменьшаем кулдаун
+        if (interactionCooldown > 0f) interactionCooldown -= Time.deltaTime;
+
+        // F1 — отладка
+        if (Keyboard.current.f1Key != null && Keyboard.current.f1Key.wasPressedThisFrame)
+            DebugState();
 
         if (!isPlaying)
         {
@@ -89,35 +124,90 @@ public class TvFlappyBird : MonoBehaviour
         }
     }
 
+    void DebugState()
+    {
+        Debug.Log("=== TvFlappyBird Debug ===");
+        Debug.Log("playerCam: " + (playerCam != null ? playerCam.name + " (active=" + playerCam.gameObject.activeInHierarchy + ")" : "NULL"));
+        Debug.Log("playerObj: " + (playerObj != null ? playerObj.name : "NULL"));
+        var col = GetComponent<Collider>() ?? GetComponentInChildren<Collider>();
+        Debug.Log("TV Collider: " + (col != null ? col.name : "NULL"));
+        if (playerCam != null)
+        {
+            float dist = Vector3.Distance(playerCam.transform.position, transform.position);
+            Vector3 toTv = (transform.position - playerCam.transform.position).normalized;
+            float dot = Vector3.Dot(playerCam.transform.forward, toTv);
+            Debug.Log("Distance: " + dist + " | Dot: " + dot);
+        }
+    }
+
     void CheckInteraction()
     {
-        if (playerCam == null || !playerCam.gameObject.activeInHierarchy)
-            playerCam = FindPlayerCam();
-        if (playerCam == null) return;
+        // Кулдаун блокирует E
+        if (interactionCooldown > 0f) return;
+
         if (!Keyboard.current.eKey.wasPressedThisFrame) return;
 
-        // Use SphereCast — more forgiving: if looking roughly at TV, we hit it
+        // ВАЖНО: всегда заново ищем активную камеру игрока
+        if (playerCam == null || !playerCam.gameObject.activeInHierarchy)
+            playerCam = FindPlayerCam();
+        if (playerCam == null || !playerCam.gameObject.activeInHierarchy)
+        {
+            Debug.LogWarning("[TvFlappyBird] Не найдена активная камера игрока");
+            return;
+        }
+
         Vector3 origin = playerCam.transform.position;
         Vector3 dir = playerCam.transform.forward;
 
-        // Check ALL hits along the view ray AND a sphere around it
-        RaycastHit[] hits = Physics.SphereCastAll(origin, 0.3f, dir, interactionDistance);
-        foreach (var hit in hits)
+        Debug.DrawRay(origin, dir * interactionDistance, Color.red, 2f);
+
+        bool hitTv = false;
+
+        // 1) Обычный Raycast
+        RaycastHit hit;
+        if (Physics.Raycast(origin, dir, out hit, interactionDistance))
         {
-            if (hit.collider == null) continue;
-            if (hit.collider.gameObject == gameObject ||
-                hit.collider.transform.IsChildOf(transform))
+            if (IsThisTv(hit.collider)) hitTv = true;
+            else Debug.Log("[TvFlappyBird] Raycast попал в: " + hit.collider.name + " (не TV)");
+        }
+
+        // 2) SphereCast — только если Raycast не попал прямо в TV
+        if (!hitTv)
+        {
+            RaycastHit[] hits = Physics.SphereCastAll(origin, 0.4f, dir, interactionDistance);
+            foreach (var h in hits)
             {
-                StartGame();
-                return;
+                if (h.collider != null && IsThisTv(h.collider))
+                {
+                    // Дополнительно проверим что игрок действительно смотрит на TV
+                    Vector3 toTv = (transform.position - origin).normalized;
+                    float dot = Vector3.Dot(dir, toTv);
+                    if (dot > 0.5f) { hitTv = true; break; }
+                }
             }
         }
+
+        if (hitTv)
+        {
+            Debug.Log("[TvFlappyBird] TV активирован!");
+            StartGame();
+        }
+    }
+
+    // Проверка что коллайдер принадлежит этому TV
+    bool IsThisTv(Collider col)
+    {
+        if (col == null) return false;
+        return col.gameObject == gameObject ||
+               col.transform.IsChildOf(transform) ||
+               transform.IsChildOf(col.transform);
     }
 
     void StartGame()
     {
         if (isPlaying) return;
         isPlaying = true;
+        interactionCooldown = 0.5f; // защита от двойного срабатывания
         DisablePlayer();
 
         miniGameRoot = new GameObject("FlappyBirdMiniGame");
@@ -189,8 +279,15 @@ public class TvFlappyBird : MonoBehaviour
     {
         if (!isPlaying) return;
         isPlaying = false; isGameOver = false;
+        interactionCooldown = 0.5f; // ВАЖНО: блокируем E после выхода
+
         if (miniGameRoot != null) Object.Destroy(miniGameRoot);
+
+        // Сбрасываем кэш камеры и ищем её заново
+        playerCam = null;
+        playerCam = FindPlayerCam();
         if (playerCam != null) playerCam.gameObject.SetActive(true);
+
         EnablePlayer();
         Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false;
     }
@@ -199,7 +296,7 @@ public class TvFlappyBird : MonoBehaviour
     {
         isGameOver = false; score = 0; playerVelocityY = 0f; spawnTimer = 0f;
         if (scoreText != null) scoreText.text = "0";
-        if (infoText != null) { infoText.text = "SPACE — jump  |  E/ESC — exit"; infoText.color = new Color(1,1,1,0.6f); infoText.fontSize = 28; }
+        if (infoText != null) { infoText.text = "SPACE — jump  |  E/ESC — exit"; infoText.color = new Color(1, 1, 1, 0.6f); infoText.fontSize = 28; }
         if (playerCube != null) { playerCube.transform.localPosition = playerStartPos; playerCube.transform.localRotation = Quaternion.identity; }
         if (miniGameRoot != null)
             for (int i = miniGameRoot.transform.childCount - 1; i >= 0; i--)
@@ -240,6 +337,8 @@ public class TvFlappyBird : MonoBehaviour
             {
                 score++;
                 if (scoreText != null) scoreText.text = score.ToString();
+
+                // Award dopamine & coins for passing a pipe
                 if (GameEconomy.Instance != null)
                     GameEconomy.Instance.AwardDopamine(GameEconomy.ActFlappy);
             }
@@ -259,12 +358,20 @@ public class TvFlappyBird : MonoBehaviour
     void GameOver()
     {
         isGameOver = true; playerVelocityY = 0f;
-        if (infoText != null) { infoText.text = "GAME OVER! Score: " + score + "\nSPACE — restart  |  E/ESC — exit"; infoText.color = new Color(1f, 0.3f, 0.3f, 1f); infoText.fontSize = 36; }
+
+        // Bonus coins based on final score
+        int bonusCoins = score * 5;
+        if (bonusCoins > 0 && GameEconomy.Instance != null)
+            GameEconomy.Instance.AddCoins(bonusCoins);
+
+        string bonusMsg = bonusCoins > 0 ? "\n+" + bonusCoins + " DC bonus!" : "";
+        if (infoText != null) { infoText.text = "GAME OVER! Score: " + score + bonusMsg + "\nSPACE — restart  |  E/ESC — exit"; infoText.color = new Color(1f, 0.3f, 0.3f, 1f); infoText.fontSize = 36; }
     }
 
     void DisablePlayer()
     {
         if (playerObj == null) playerObj = GameObject.Find("player");
+        if (playerObj == null) playerObj = GameObject.Find("Player");
         if (playerObj != null)
         {
             disabledScripts = playerObj.GetComponents<MonoBehaviour>();
@@ -311,3 +418,4 @@ public class TvFlappyBird : MonoBehaviour
 
     void OnDestroy() { if (isPlaying) ExitGame(); }
 }
+
