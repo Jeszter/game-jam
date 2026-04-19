@@ -126,21 +126,31 @@ public class PoliceChaseGame : MonoBehaviour
 
         // Player — use car03 with its texture (nice looking sports car)
         player = InstantiateCar(playerAsset, "PlayerCar");
-        if (player == null) player = MakeFallbackCar("PlayerCar", new Color(0.1f, 0.4f, 1f));
+        if (player == null)
+        {
+            Debug.LogWarning("[PoliceChaseGame] playerAsset prefab NULL — using fallback cube");
+            player = MakeFallbackCar("PlayerCar", new Color(0.1f, 0.4f, 1f));
+        }
         player.transform.SetParent(root.transform);
         player.transform.localScale = Vector3.one * carScale;
-        player.transform.localPosition = new Vector3(0f, 0f, 0f);
-        player.transform.localRotation = Quaternion.identity;
+        player.transform.localPosition = new Vector3(0f, 0.1f, 0f);
+        player.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); // car faces +Z towards camera-away
         RemoveAllColliders(player);
+        DebugRenderers("PlayerCar", player);
 
         // Police car
         police = InstantiateCar(policeAsset, "PoliceCar");
-        if (police == null) police = MakeFallbackCar("Police", new Color(0.1f, 0.1f, 0.6f));
+        if (police == null)
+        {
+            Debug.LogWarning("[PoliceChaseGame] policeAsset prefab NULL — using fallback cube");
+            police = MakeFallbackCar("Police", new Color(0.1f, 0.1f, 0.6f));
+        }
         police.transform.SetParent(root.transform);
         police.transform.localScale = Vector3.one * carScale;
-        police.transform.localPosition = new Vector3(0f, 0f, -policeDistance);
-        police.transform.localRotation = Quaternion.identity;
+        police.transform.localPosition = new Vector3(0f, 0.1f, -policeDistance);
+        police.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
         RemoveAllColliders(police);
+        DebugRenderers("PoliceCar", police);
 
         // Light
         var lightObj = new GameObject("Light");
@@ -192,7 +202,6 @@ public class PoliceChaseGame : MonoBehaviour
     void PreloadAssets()
     {
         trafficAssets.Clear();
-#if UNITY_EDITOR
         for (int i = 0; i < trafficModels.Length; i++)
         {
             var a = LoadAssetPair(trafficModels[i], trafficTextures[i]);
@@ -200,27 +209,31 @@ public class PoliceChaseGame : MonoBehaviour
         }
         playerAsset = LoadAssetPair("Low_Poly_Vehicles_car03", "car03");
         policeAsset = LoadAssetPair("Low_Poly_Vehicles_carPolice", "carPolice");
-#endif
     }
 
-#if UNITY_EDITOR
     CarAsset LoadAssetPair(string model, string tex)
     {
         var a = new CarAsset();
-        a.prefab = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath + model + ".fbx");
+        // Resources (працює і в білді)
+        a.prefab = Resources.Load<GameObject>("PoliceChase/Cars/" + model);
+        a.tex    = Resources.Load<Texture2D>("PoliceChase/Textures/" + tex);
 
-        // Try png first, then tga
-        a.tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath + tex + ".png");
-        if (a.tex == null) a.tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath + tex + ".tga");
+#if UNITY_EDITOR
+        if (a.prefab == null)
+            a.prefab = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath + model + ".fbx");
+        if (a.tex == null)
+            a.tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath + tex + ".png");
+        if (a.tex == null)
+            a.tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath + tex + ".tga");
+#endif
 
         if (a.prefab == null)
-            Debug.LogWarning($"[PoliceChaseGame] Missing car model: {fbxPath}{model}.fbx");
+            Debug.LogWarning($"[PoliceChaseGame] Missing car model: {model}");
         if (a.tex == null)
-            Debug.LogWarning($"[PoliceChaseGame] Missing car texture: {texPath}{tex}.png/.tga");
+            Debug.LogWarning($"[PoliceChaseGame] Missing car texture: {tex}");
 
         return a;
     }
-#endif
 
     void Update()
     {
@@ -414,6 +427,17 @@ public class PoliceChaseGame : MonoBehaviour
 
     // ---- Car instantiation ----
 
+    void DebugRenderers(string tag, GameObject go)
+    {
+        if (go == null) { Debug.LogWarning($"[{tag}] go is null"); return; }
+        var rs = go.GetComponentsInChildren<Renderer>();
+        Debug.Log($"[{tag}] pos={go.transform.position} scale={go.transform.lossyScale} renderers={rs.Length}");
+        if (rs.Length == 0) return;
+        Bounds b = rs[0].bounds;
+        foreach (var r in rs) b.Encapsulate(r.bounds);
+        Debug.Log($"[{tag}] bounds center={b.center} size={b.size} firstMat={(rs[0].sharedMaterial != null ? rs[0].sharedMaterial.shader.name : "NULL")}");
+    }
+
     GameObject InstantiateCar(CarAsset asset, string nameHint)
     {
         if (asset.prefab == null) return null;
@@ -424,16 +448,27 @@ public class PoliceChaseGame : MonoBehaviour
         if (asset.tex != null)
         {
             var shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+            if (shader == null) shader = Shader.Find("Unlit/Texture");
+            if (shader == null)
+            {
+                Debug.LogWarning("[PoliceChaseGame] No suitable shader found for car material");
+                return instance;
+            }
+
             var renderers = instance.GetComponentsInChildren<Renderer>();
             foreach (var r in renderers)
             {
-                // Keep one material per renderer (merge material slots to same textured mat)
-                var mats = new Material[r.sharedMaterials.Length];
-                for (int i = 0; i < mats.Length; i++)
+                int count = Mathf.Max(1, r.sharedMaterials.Length);
+                var mats = new Material[count];
+                for (int i = 0; i < count; i++)
                 {
                     var mat = new Material(shader);
-                    mat.SetTexture("_BaseMap", asset.tex);
-                    mat.SetColor("_BaseColor", Color.white);
+                    // Support both URP (_BaseMap/_BaseColor) and Built-in (_MainTex/_Color)
+                    if (mat.HasProperty("_BaseMap"))   mat.SetTexture("_BaseMap", asset.tex);
+                    if (mat.HasProperty("_MainTex"))   mat.SetTexture("_MainTex", asset.tex);
+                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+                    if (mat.HasProperty("_Color"))     mat.SetColor("_Color", Color.white);
                     mats[i] = mat;
                 }
                 r.materials = mats;

@@ -10,7 +10,7 @@ public class MenuTransition : MonoBehaviour
     [SerializeField] private CanvasGroup overlayFade;
     [SerializeField] private CanvasGroup titleGroup;
     [SerializeField] private CanvasGroup cornerUIGroup;
-    [SerializeField] private string nextSceneName = "GameScene";
+    [SerializeField] private string nextSceneName = "Game1 2";
     [SerializeField] private float zoomDuration = 1.2f;
     [SerializeField] private float fadeDuration = 0.8f;
     [SerializeField] private float targetScale = 3f;
@@ -81,14 +81,27 @@ public class MenuTransition : MonoBehaviour
 
         yield return new WaitForSeconds(0.3f);
 
-        if (SceneManager.GetSceneByName(nextSceneName) != null)
+        // Перед завантаженням скидаємо timeScale на випадок повернення з паузи
+        Time.timeScale = 1f;
+
+        if (!string.IsNullOrEmpty(nextSceneName) && Application.CanStreamedLevelBeLoaded(nextSceneName))
         {
-            try { SceneManager.LoadScene(nextSceneName); }
-            catch { Debug.Log("Next scene not found: " + nextSceneName); }
+            SceneManager.LoadScene(nextSceneName);
         }
         else
         {
-            Debug.Log("Transition complete. Next scene: " + nextSceneName);
+            Debug.LogError("[MenuTransition] Scene '" + nextSceneName + "' is NOT in Build Settings or disabled. Add it via File > Build Settings.");
+            // Скидаємо візуал, щоб користувач міг ще раз спробувати
+            if (overlayFade != null) overlayFade.alpha = 0f;
+            if (backgroundGroup != null) backgroundGroup.alpha = 1f;
+            if (titleGroup != null) titleGroup.alpha = 1f;
+            if (cornerUIGroup != null) cornerUIGroup.alpha = 1f;
+            if (phonePanel != null)
+            {
+                phonePanel.localScale = Vector3.one;
+                phonePanel.anchoredPosition = Vector2.zero;
+            }
+            isTransitioning = false;
         }
     }
 }

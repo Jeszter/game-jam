@@ -159,7 +159,7 @@ MonoBehaviour:
   overlayFade: {fileID: 1936762336}
   titleGroup: {fileID: 1844333120}
   cornerUIGroup: {fileID: 0}
-  nextSceneName: Game1
+  nextSceneName: Game1 2
   zoomDuration: 1.2
   fadeDuration: 0.8
   targetScale: 3

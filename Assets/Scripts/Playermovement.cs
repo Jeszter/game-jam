@@ -83,9 +83,28 @@ public class PlayerMovement : MonoBehaviour
 
     private void Update()
     {
+        EnforceCursorLock();
         Look();
         Move();
         UpdateCrouch();
+    }
+
+    /// <summary>
+    /// Гвард: якщо гра в активному стані (не пауза, телефон закритий, мінігри закриті) —
+    /// курсор має бути locked/invisible. Це захищає від випадкових "залипань" курсора
+    /// після дій типу F-з'їсти-їжу чи закриття будь-якого UI.
+    /// </summary>
+    private void EnforceCursorLock()
+    {
+        if (phoneLock) return;                  // телефон/діалог відкритий — курсор видимий
+        if (Time.timeScale == 0f) return;       // пауза — курсор видимий
+
+        // Якщо хтось залишив курсор видимим — повертаємо назад у locked-режим.
+        if (Cursor.lockState != CursorLockMode.Locked || Cursor.visible)
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
     }
 
     private void Look()
@@ -193,5 +212,3 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 }
-
-

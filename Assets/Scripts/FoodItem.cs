@@ -66,7 +66,7 @@ public class FoodItem : MonoBehaviour
         if (looked)
         {
             currentLookedFood = this;
-            ShowHint($"<color=#FFD700>[F]</color> Съесть: <b>{foodName}</b>  " +
+            ShowHint($"<color=#FFD700>[F]</color> Eat: <b>{foodName}</b>  " +
                      $"<color=#70FF70>+{Mathf.RoundToInt(hungerRestore)} 🍽</color>");
 
             if (Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame)
@@ -129,9 +129,22 @@ public class FoodItem : MonoBehaviour
         }
 
         var sm = SoundManager.Instance;
-        if (sm != null) sm.PlayMenuClick();
+        if (sm != null)
+        {
+            if (sm.foodEat != null)
+                sm.PlayAt(sm.foodEat, transform.position, 0.9f, Random.Range(0.95f, 1.08f));
+            else
+                sm.PlayMenuClick();
+        }
 
         HideHint();
+
+        // Гарантуємо, що курсор не "виплив" випадково через UI-операції, викликані під час Eat()
+        // (CoinFloater / HUD створюють ScreenSpaceOverlay канвас — у деяких випадках це
+        // провокує InputSystemUIInputModule показати системний курсор на 1 кадр).
+        UnityEngine.Cursor.lockState = UnityEngine.CursorLockMode.Locked;
+        UnityEngine.Cursor.visible = false;
+
         // "Съели" — отключаем объект (не уничтожаем, чтобы шоп мог его вернуть)
         gameObject.SetActive(false);
     }

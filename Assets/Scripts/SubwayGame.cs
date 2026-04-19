@@ -135,17 +135,14 @@ public class SubwayGame : MonoBehaviour
 
     void LoadAssets()
     {
-#if UNITY_EDITOR
-        stickmanPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
-            BARRIERS_FBX_PATH + "Stickalungu_Animated.fbx");
-
-        roadTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(
-            "Assets/Barriers pack Demo/Barriers pack Demo/texture.jpg");
+        // Основний шлях, який працює і в Editor і в Build — Resources/SubwaySurf/Barriers/
+        stickmanPrefab = LoadBarrier("Stickalungu_Animated");
+        roadTexture    = Resources.Load<Texture2D>("SubwaySurf/barriers_texture");
 
         var lane = new List<GameObject>();
         foreach (var name in LANE_OBSTACLE_NAMES)
         {
-            var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(BARRIERS_FBX_PATH + name);
+            var go = LoadBarrier(System.IO.Path.GetFileNameWithoutExtension(name));
             if (go != null) lane.Add(go);
         }
         laneObstaclePrefabs = lane.ToArray();
@@ -153,13 +150,20 @@ public class SubwayGame : MonoBehaviour
         var jump = new List<GameObject>();
         foreach (var name in JUMP_OBSTACLE_NAMES)
         {
-            var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(BARRIERS_FBX_PATH + name);
+            var go = LoadBarrier(System.IO.Path.GetFileNameWithoutExtension(name));
             if (go != null) jump.Add(go);
         }
         jumpObstaclePrefabs = jump.ToArray();
+    }
+
+    GameObject LoadBarrier(string nameNoExt)
+    {
+        var g = Resources.Load<GameObject>("SubwaySurf/Barriers/" + nameNoExt);
+        if (g != null) return g;
+#if UNITY_EDITOR
+        return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(BARRIERS_FBX_PATH + nameNoExt + ".fbx");
 #else
-        laneObstaclePrefabs = new GameObject[0];
-        jumpObstaclePrefabs = new GameObject[0];
+        return null;
 #endif
     }
 

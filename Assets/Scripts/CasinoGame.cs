@@ -72,30 +72,36 @@ public class CasinoGame : MonoBehaviour
     void LoadSlotSprites()
     {
         symbolSprites = new Sprite[symbolNames.Length];
-#if UNITY_EDITOR
-        var all = UnityEditor.AssetDatabase.LoadAllAssetsAtPath("Assets/TextursAssets/slot.png");
-        for (int i = 0; i < symbolNames.Length; i++)
+
+        // 1) Шлях для білда: Resources/SlotSprites/slot.png має бути імпортований як Sprite (Multiple).
+        var loaded = Resources.LoadAll<Sprite>("SlotSprites/slot");
+        if (loaded == null || loaded.Length == 0)
+            loaded = Resources.LoadAll<Sprite>("SlotSprites");
+
+        if (loaded != null && loaded.Length > 0)
         {
-            foreach (var a in all)
+            for (int i = 0; i < symbolNames.Length; i++)
             {
-                if (a is Sprite s && s.name == symbolNames[i])
-                { symbolSprites[i] = s; break; }
+                foreach (var s in loaded)
+                    if (s != null && s.name == symbolNames[i]) { symbolSprites[i] = s; break; }
             }
         }
-#endif
-        // Runtime fallback: load all sprites from the texture at runtime
+
+#if UNITY_EDITOR
+        // 2) Editor fallback з оригінального слот-атласа.
         if (symbolSprites[0] == null)
         {
-            var loaded = Resources.LoadAll<Sprite>("SlotSprites");
-            if (loaded != null && loaded.Length > 0)
+            var all = UnityEditor.AssetDatabase.LoadAllAssetsAtPath("Assets/TextursAssets/slot.png");
+            for (int i = 0; i < symbolNames.Length; i++)
             {
-                for (int i = 0; i < symbolNames.Length; i++)
+                foreach (var a in all)
                 {
-                    foreach (var s in loaded)
-                        if (s.name == symbolNames[i]) { symbolSprites[i] = s; break; }
+                    if (a is Sprite s && s.name == symbolNames[i])
+                    { symbolSprites[i] = s; break; }
                 }
             }
         }
+#endif
     }
 
     void BuildUI()

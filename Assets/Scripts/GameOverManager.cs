@@ -26,6 +26,12 @@ public class GameOverManager : MonoBehaviour
     private GameHUDController hud;
     private GameEconomy economy;
 
+    // Grace period: don't trigger death during the opening cutscene / very first seconds.
+    [Header("Safety")]
+    [Tooltip("Seconds after load during which death checks are disabled (prevents false game-over during intro cutscene when HUD/economy are still initializing).")]
+    public float startupGracePeriod = 4f;
+    private float startupTimer = 0f;
+
     void Start()
     {
         hud = FindFirstObjectByType<GameHUDController>();
@@ -36,6 +42,17 @@ public class GameOverManager : MonoBehaviour
     {
         if (economy == null) economy = GameEconomy.Instance;
         if (hud == null) hud = FindFirstObjectByType<GameHUDController>();
+
+        // Grace period: skip death checks until managers are initialized.
+        if (startupTimer < startupGracePeriod)
+        {
+            startupTimer += Time.unscaledDeltaTime;
+            return;
+        }
+
+        // Also skip while the wake-up cutscene is running.
+        var cutscene = FindFirstObjectByType<BedWakeCutscene>();
+        if (cutscene != null && cutscene.isActiveAndEnabled) return;
 
         if (!isDead && !deathTriggered)
         {

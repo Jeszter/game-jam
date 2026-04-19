@@ -547,46 +547,21 @@ public class ShopController : MonoBehaviour
             if (objs[i] != null) Destroy(objs[i]);
     }
 
-    /// <summary>Короткий "ping" эффект: жёлтая сфера, которая разрастается и исчезает.</summary>
+    /// <summary>
+    /// Покупка/respawn — без світової "вибуху-сфери", яка виглядала як бомба.
+    /// Тепер просто показуємо "+N DC" CoinFloater через HUD (викликається в коді покупки).
+    /// </summary>
     private void SpawnPurchaseFx(Vector3 worldPos)
     {
-        var fx = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        fx.name = "ShopPurchaseFx";
-        var col = fx.GetComponent<Collider>();
-        if (col != null) Destroy(col);
-        fx.transform.position = worldPos;
-        fx.transform.localScale = Vector3.one * 0.2f;
-
-        var mr = fx.GetComponent<MeshRenderer>();
-        if (mr != null)
-        {
-            var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-            if (mat.shader == null) mat = new Material(Shader.Find("Unlit/Color"));
-            mat.color = new Color(1f, 0.85f, 0.25f, 1f);
-            mr.material = mat;
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            mr.receiveShadows = false;
-        }
-        StartCoroutine(FxAnim(fx));
+        // no-op — жодних світових сфер
     }
 
+    // Кода FxAnim більше не потрібна, але залишаємо заглушку на випадок
+    // якщо хтось ззовні посилається на неї через reflection.
     private System.Collections.IEnumerator FxAnim(GameObject fx)
     {
-        float t = 0f;
-        float dur = 0.6f;
-        Vector3 startScale = fx.transform.localScale;
-        var mr = fx.GetComponent<MeshRenderer>();
-        Color baseCol = mr != null ? mr.material.color : Color.yellow;
-        while (t < dur && fx != null)
-        {
-            t += Time.deltaTime;
-            float k = t / dur;
-            fx.transform.localScale = startScale + Vector3.one * (k * 1.2f);
-            if (mr != null)
-                mr.material.color = new Color(baseCol.r, baseCol.g, baseCol.b, 1f - k);
-            yield return null;
-        }
         if (fx != null) Destroy(fx);
+        yield break;
     }
 
     private Transform FindRecursive(Transform root, string path)

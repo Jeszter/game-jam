@@ -106,6 +106,11 @@ public class Door : MonoBehaviour
     {
         isMoving = true;
 
+        // Play door SFX at the door's position.
+        var sm = SoundManager.Instance;
+        if (sm != null && sm.doorSound != null)
+            sm.PlayAt(sm.doorSound, transform.position, 0.85f, Random.Range(0.95f, 1.05f));
+
         if (!isOpen)
         {
             // Determine which direction to open based on player position

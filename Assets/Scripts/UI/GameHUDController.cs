@@ -25,8 +25,8 @@ public class GameHUDController : MonoBehaviour
 
     [Header("Layout Fix")]
     [SerializeField] private bool disableLayoutGroup = true;
-    // Збільшений HUD для кращої видимості
-    [SerializeField] private Vector2 hudSize = new Vector2(500f, 140f);
+    // Збільшений HUD для кращої видимості. 3 компактні рядки: DOPAMINE / HUNGER / GOLD.
+    [SerializeField] private Vector2 hudSize = new Vector2(500f, 150f);
 
     [Header("Auto-create Hunger Bar")]
     [SerializeField] private bool autoCreateHungerBar = true;
@@ -168,26 +168,36 @@ public class GameHUDController : MonoBehaviour
             Debug.Log("[HUD] Set size to " + hudSize);
         }
 
-        // DopLabel (left, row 1) — збільшений
+        // ------- Позиції рядків (всі вирівняні по лівому краю HUD, спільний label-X=12, bar-X=130) -------
+        const float rowDopY   = -22f;
+        const float rowHungerY = -58f;
+        const float rowGoldY  = -94f;
+        const float labelX    = 12f;
+        const float labelW    = 110f;
+        const float barX      = 130f;
+        const float barW      = 280f;
+        const float rowH      = 28f;
+
+        // DopLabel (row 1)
         if (dopamineLabel != null)
         {
             var rt = dopamineLabel.rectTransform;
             rt.anchorMin = new Vector2(0f, 1f);
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 0.5f);
-            rt.sizeDelta = new Vector2(110f, 30f);
-            rt.anchoredPosition = new Vector2(12f, -22f);
+            rt.sizeDelta = new Vector2(labelW, rowH);
+            rt.anchoredPosition = new Vector2(labelX, rowDopY);
         }
 
-        // DopamineBarBG (row 1) — значно збільшений
+        // DopamineBarBG (row 1)
         if (dopamineBarBG != null)
         {
             var rt = dopamineBarBG.rectTransform;
             rt.anchorMin = new Vector2(0f, 1f);
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 0.5f);
-            rt.sizeDelta = new Vector2(280f, 30f);
-            rt.anchoredPosition = new Vector2(125f, -22f);
+            rt.sizeDelta = new Vector2(barW, rowH);
+            rt.anchoredPosition = new Vector2(barX, rowDopY);
 
             var le = dopamineBarBG.GetComponent<LayoutElement>();
             if (le != null) le.ignoreLayout = true;
@@ -224,18 +234,18 @@ public class GameHUDController : MonoBehaviour
             }
         }
 
-        // CoinAmount (right) — збільшений
+        // CoinAmount (row 3, праворуч від "GOLD"-мітки в кінці бар-ліній)
         if (coinText != null)
         {
             var rt = coinText.rectTransform;
-            rt.anchorMin = new Vector2(1f, 1f);
-            rt.anchorMax = new Vector2(1f, 1f);
-            rt.pivot = new Vector2(1f, 0.5f);
-            rt.sizeDelta = new Vector2(160f, 36f);
-            rt.anchoredPosition = new Vector2(-12f, -110f);
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.sizeDelta = new Vector2(barW, rowH);
+            rt.anchoredPosition = new Vector2(barX, rowGoldY);
         }
 
-        // CoinIcon (may be Image or TMP_Text)
+        // CoinIcon (may be Image or TMP_Text) — не використовуємо, ховаємо щоб не плавав
         {
             Transform coinIconT = null;
             if (coinIcon != null)
@@ -245,15 +255,7 @@ public class GameHUDController : MonoBehaviour
 
             if (coinIconT != null)
             {
-                var rt = coinIconT as RectTransform;
-                if (rt != null)
-                {
-                    rt.anchorMin = new Vector2(1f, 1f);
-                    rt.anchorMax = new Vector2(1f, 1f);
-                    rt.pivot = new Vector2(1f, 0.5f);
-                    rt.sizeDelta = new Vector2(36f, 36f);
-                    rt.anchoredPosition = new Vector2(-172f, -110f);
-                }
+                coinIconT.gameObject.SetActive(false);
             }
         }
 
@@ -363,19 +365,20 @@ public class GameHUDController : MonoBehaviour
         go.transform.SetParent(transform, false);
 
         var rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(1f, 1f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot     = new Vector2(1f, 0.5f);
-        rt.sizeDelta = new Vector2(120f, 18f);
-        rt.anchoredPosition = new Vector2(-12f, -96f);
+        // row 3 — узгоджено з FixLayout (rowGoldY = -94, labelX = 12, labelW = 110, rowH = 28)
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot     = new Vector2(0f, 0.5f);
+        rt.sizeDelta = new Vector2(110f, 28f);
+        rt.anchoredPosition = new Vector2(12f, -94f);
 
         coinLabel = go.AddComponent<TextMeshProUGUI>();
         coinLabel.text      = "GOLD";
-        coinLabel.fontSize  = 12f;
+        coinLabel.fontSize  = 14f;
         coinLabel.fontStyle = FontStyles.Bold;
-        coinLabel.characterSpacing = 4f;
-        coinLabel.color     = new Color(coinColor.r, coinColor.g, coinColor.b, 0.7f);
-        coinLabel.alignment = TextAlignmentOptions.Right;
+        coinLabel.characterSpacing = 2f;
+        coinLabel.color     = coinColor;
+        coinLabel.alignment = TextAlignmentOptions.MidlineLeft;
         coinLabel.enableWordWrapping = false;
         coinLabel.overflowMode = TextOverflowModes.Overflow;
         coinLabel.raycastTarget = false;
@@ -456,7 +459,7 @@ public class GameHUDController : MonoBehaviour
             coinText.color = coinColor;
             coinText.outlineWidth = 0.2f;
             coinText.outlineColor = new Color(0.3f, 0.15f, 0f, 1f);
-            coinText.alignment = TextAlignmentOptions.Right;
+            coinText.alignment = TextAlignmentOptions.MidlineLeft;
             coinText.enableWordWrapping = false;
             coinText.overflowMode = TextOverflowModes.Overflow;
             coinText.enableAutoSizing = false;
@@ -539,15 +542,15 @@ public class GameHUDController : MonoBehaviour
         if (dopamineBarBG == null || dopamineLabel == null) return;
         Transform hudContainer = transform;
 
-        // Hunger label
+        // Hunger label (row 2 — синхронізовано з FixLayout: rowHungerY=-58)
         var hLabelGO = new GameObject("HungerLabel", typeof(RectTransform));
         hLabelGO.transform.SetParent(hudContainer, false);
         var hlRT = (RectTransform)hLabelGO.transform;
         hlRT.anchorMin = new Vector2(0f, 1f);
         hlRT.anchorMax = new Vector2(0f, 1f);
         hlRT.pivot = new Vector2(0f, 0.5f);
-        hlRT.sizeDelta = new Vector2(110f, 30f);
-        hlRT.anchoredPosition = new Vector2(12f, -62f);
+        hlRT.sizeDelta = new Vector2(110f, 28f);
+        hlRT.anchoredPosition = new Vector2(12f, -58f);
         hungerLabel = hLabelGO.AddComponent<TextMeshProUGUI>();
         hungerLabel.text = "HUNGER";
         hungerLabel.fontSize = 14f;
@@ -567,8 +570,8 @@ public class GameHUDController : MonoBehaviour
         hbgRT.anchorMin = new Vector2(0f, 1f);
         hbgRT.anchorMax = new Vector2(0f, 1f);
         hbgRT.pivot = new Vector2(0f, 0.5f);
-        hbgRT.sizeDelta = new Vector2(280f, 30f);
-        hbgRT.anchoredPosition = new Vector2(125f, -62f);
+        hbgRT.sizeDelta = new Vector2(280f, 28f);
+        hbgRT.anchoredPosition = new Vector2(130f, -58f);
         var hBgImg = hBgGO.AddComponent<Image>();
         hBgImg.color = new Color(0.12f, 0.12f, 0.14f, 1f);
         hBgImg.raycastTarget = false;

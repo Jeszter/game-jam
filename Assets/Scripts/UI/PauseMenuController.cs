@@ -107,6 +107,25 @@ public class PauseMenuController : MonoBehaviour
 #endif
     }
 
+    public void GoToMainMenu()
+    {
+        Time.timeScale = 1f;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        // Спробуємо знайти сцену головного меню серед build scenes
+        string[] candidates = new string[] { "SampleScene", "MainMenu", "Main Menu", "Menu" };
+        foreach (var name in candidates)
+        {
+            if (Application.CanStreamedLevelBeLoaded(name))
+            {
+                SceneManager.LoadScene(name);
+                return;
+            }
+        }
+        Debug.LogWarning("[Pause] Main menu scene not found in build settings. Add SampleScene to Build Settings.");
+    }
+
     private void SetPlayerLookEnabled(bool enabled)
     {
         GameObject player = GameObject.Find("player");
@@ -148,15 +167,16 @@ public class PauseMenuController : MonoBehaviour
         var dim = pausePanel.AddComponent<Image>();
         dim.color = new Color(0f, 0f, 0f, 0.78f);
 
-        // Menu box
+        // Main horizontal layout: left = menu box, right = controls panel
+        // Menu box (centered-left)
         var box = new GameObject("MenuBox", typeof(RectTransform));
         box.transform.SetParent(pausePanel.transform, false);
         var brt = (RectTransform)box.transform;
         brt.anchorMin = new Vector2(0.5f, 0.5f);
         brt.anchorMax = new Vector2(0.5f, 0.5f);
-        brt.pivot = new Vector2(0.5f, 0.5f);
-        brt.sizeDelta = new Vector2(520f, 520f);
-        brt.anchoredPosition = Vector2.zero;
+        brt.pivot = new Vector2(1f, 0.5f);
+        brt.sizeDelta = new Vector2(500f, 620f);
+        brt.anchoredPosition = new Vector2(-20f, 0f);
         var boxImg = box.AddComponent<Image>();
         boxImg.color = new Color(0.08f, 0.05f, 0.12f, 0.98f);
         var outline = box.AddComponent<Outline>();
@@ -170,28 +190,94 @@ public class PauseMenuController : MonoBehaviour
         trt.anchorMin = new Vector2(0.5f, 1f);
         trt.anchorMax = new Vector2(0.5f, 1f);
         trt.pivot = new Vector2(0.5f, 1f);
-        trt.sizeDelta = new Vector2(500f, 100f);
-        trt.anchoredPosition = new Vector2(0f, -30f);
+        trt.sizeDelta = new Vector2(480f, 90f);
+        trt.anchoredPosition = new Vector2(0f, -20f);
         title.alignment = TextAlignmentOptions.Center;
 
-        // Buttons
-        resumeButton  = MakeButton(box.transform, "ResumeBtn",  "RESUME",  0,
+        // Buttons (4 now: RESUME / RESTART / MAIN MENU / QUIT)
+        resumeButton  = MakeButton(box.transform, "ResumeBtn",  "RESUME",    0,
                                    new Color(0.22f, 0.68f, 0.35f), Resume);
-        restartButton = MakeButton(box.transform, "RestartBtn", "RESTART", 1,
+        restartButton = MakeButton(box.transform, "RestartBtn", "RESTART",   1,
                                    new Color(0.85f, 0.55f, 0.15f), Restart);
-        quitButton    = MakeButton(box.transform, "QuitBtn",    "QUIT",    2,
+        MakeButton(box.transform, "MenuBtn",    "MAIN MENU",  2,
+                                   new Color(0.35f, 0.45f, 0.85f), GoToMainMenu);
+        quitButton    = MakeButton(box.transform, "QuitBtn",    "QUIT",      3,
                                    new Color(0.78f, 0.2f, 0.25f), QuitToDesktop);
 
         // Hint
-        var hint = MakeText(box.transform, "Hint", "Press ESC to resume", 22,
+        var hint = MakeText(box.transform, "Hint", "Press ESC to resume", 20,
                             FontStyles.Italic, new Color(1f, 1f, 1f, 0.6f));
         var hrt = hint.rectTransform;
         hrt.anchorMin = new Vector2(0.5f, 0f);
         hrt.anchorMax = new Vector2(0.5f, 0f);
         hrt.pivot = new Vector2(0.5f, 0f);
-        hrt.sizeDelta = new Vector2(500f, 50f);
-        hrt.anchoredPosition = new Vector2(0f, 20f);
+        hrt.sizeDelta = new Vector2(480f, 40f);
+        hrt.anchoredPosition = new Vector2(0f, 15f);
         hint.alignment = TextAlignmentOptions.Center;
+
+        // ============ INSTRUCTIONS PANEL (right side) ============
+        var inst = new GameObject("InstructionsPanel", typeof(RectTransform));
+        inst.transform.SetParent(pausePanel.transform, false);
+        var irt = (RectTransform)inst.transform;
+        irt.anchorMin = new Vector2(0.5f, 0.5f);
+        irt.anchorMax = new Vector2(0.5f, 0.5f);
+        irt.pivot = new Vector2(0f, 0.5f);
+        irt.sizeDelta = new Vector2(580f, 620f);
+        irt.anchoredPosition = new Vector2(20f, 0f);
+        var iImg = inst.AddComponent<Image>();
+        iImg.color = new Color(0.08f, 0.05f, 0.12f, 0.98f);
+        var iOutline = inst.AddComponent<Outline>();
+        iOutline.effectColor = new Color(0.28f, 0.72f, 1f, 1f);
+        iOutline.effectDistance = new Vector2(3f, -3f);
+
+        // Instructions title
+        var iTitle = MakeText(inst.transform, "InstTitle", "HOW TO PLAY", 48, FontStyles.Bold,
+            new Color(0.4f, 0.85f, 1f));
+        var ittRt = iTitle.rectTransform;
+        ittRt.anchorMin = new Vector2(0.5f, 1f);
+        ittRt.anchorMax = new Vector2(0.5f, 1f);
+        ittRt.pivot = new Vector2(0.5f, 1f);
+        ittRt.sizeDelta = new Vector2(560f, 70f);
+        ittRt.anchoredPosition = new Vector2(0f, -20f);
+        iTitle.alignment = TextAlignmentOptions.Center;
+
+        // Instructions body text
+        string bodyText =
+            "<color=#FFD700>GOAL</color>\n" +
+            "Survive the dopamine grind. Keep your bar above zero,\n" +
+            "eat food so hunger doesn't kill you, earn DoomCoins.\n\n" +
+            "<color=#FFD700>MOVEMENT</color>\n" +
+            "<b>WASD</b> — walk   <b>SHIFT</b> — run   <b>SPACE</b> — jump\n" +
+            "<b>Mouse</b> — look around\n\n" +
+            "<color=#FFD700>INTERACTION</color>\n" +
+            "<b>E</b> — pick up / put down an item\n" +
+            "<b>LMB</b> (Left Mouse) — throw held item\n" +
+            "<b>F</b> — eat food you are looking at\n\n" +
+            "<color=#FFD700>PHONE &amp; SHOP</color>\n" +
+            "<b>TAB</b> — open phone   <b>ESC</b> — pause / close\n" +
+            "Open the phone, go to the shop and buy upgrades\n" +
+            "(laptop, TV+PS5, music, vape, IQOS, snacks, energy).\n\n" +
+            "<color=#FFD700>SMOKING</color>\n" +
+            "<b>V</b> — vape (+DP, then crashes down)\n" +
+            "Each hit gets less effective — don't spam it.\n\n" +
+            "<color=#FFD700>MINI-GAMES</color>\n" +
+            "TV / Laptop / Arcade run Flappy Bird, Knife Hit,\n" +
+            "Subway Runner, Police Chase and Casino.\n" +
+            "All of them earn dopamine and DoomCoins.\n\n" +
+            "<color=#FF7070><b>If dopamine or hunger reaches 0 — GAME OVER.</b></color>";
+
+        var body = MakeText(inst.transform, "InstBody", bodyText, 18, FontStyles.Normal,
+            new Color(0.92f, 0.92f, 0.96f));
+        var bodyRt = body.rectTransform;
+        bodyRt.anchorMin = new Vector2(0f, 0f);
+        bodyRt.anchorMax = new Vector2(1f, 1f);
+        bodyRt.pivot = new Vector2(0.5f, 0.5f);
+        bodyRt.offsetMin = new Vector2(25f, 25f);
+        bodyRt.offsetMax = new Vector2(-25f, -100f);
+        body.alignment = TextAlignmentOptions.TopLeft;
+        body.enableWordWrapping = true;
+        body.overflowMode = TextOverflowModes.Truncate;
+        body.lineSpacing = 6f;
     }
 
     Button MakeButton(Transform parent, string name, string text, int idx,
@@ -203,8 +289,9 @@ public class PauseMenuController : MonoBehaviour
         rt.anchorMin = new Vector2(0.5f, 0.5f);
         rt.anchorMax = new Vector2(0.5f, 0.5f);
         rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(380f, 72f);
-        rt.anchoredPosition = new Vector2(0f, 60f - idx * 90f);
+        rt.sizeDelta = new Vector2(380f, 64f);
+        // 4 кнопки: RESUME / RESTART / MAIN MENU / QUIT, компактніше
+        rt.anchoredPosition = new Vector2(0f, 110f - idx * 78f);
 
         var img = go.AddComponent<Image>();
         img.color = bg;

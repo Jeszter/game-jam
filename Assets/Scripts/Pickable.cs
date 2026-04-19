@@ -5,8 +5,8 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public class Pickable : MonoBehaviour
 {
-    [Header("Назва предмету (показується на екрані)")]
-    public string itemName = "Предмет";
+    [Header("Item name (shown on screen)")]
+    public string itemName = "Item";
 
     [HideInInspector] public Rigidbody rb;
     [HideInInspector] public bool isHeld = false;

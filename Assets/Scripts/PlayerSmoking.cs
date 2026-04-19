@@ -112,22 +112,30 @@ public class PlayerSmoking : MonoBehaviour
     private void Consume(string itemName, float spike, float residual, float crashDur,
                          Color smokeColor, int puffs, float smokeDuration, float boredom)
     {
+        // 0) Inhale SFX
+        var sm = SoundManager.Instance;
+        if (sm != null && sm.smokeInhale != null)
+            sm.PlayAt(sm.smokeInhale, transform.position, 0.9f, Random.Range(0.95f, 1.05f));
+
         // 1) Spike DP
         if (hud != null) hud.AddDopamine(spike);
 
-        // 2) Smoke spawn position — перед камерою (трохи нижче носа)
-        var cam = Camera.main;
+        // 2) Smoke spawn position — перед активною FPS-камерою.
+        //    ВАЖЛИВО: у сцені БІЛЬШЕ ОДНІЄЇ камери з тегом MainCamera — "Main Camera"
+        //    стоїть в origin'і (z=-10), а справжня гравцева — під player/Camera.
+        //    Camera.main може повернути не ту → дим з'явиться десь поза полем зору.
+        Camera cam = FindActivePlayerCamera();
         if (cam == null)
         {
-            Debug.LogWarning("[Smoking] Camera.main == null, пропускаю дим");
+            Debug.LogWarning("[Smoking] No active camera found — skipping smoke");
         }
         else
         {
-            // ВАЖЛИВО: старт диму має бути поза near clip plane, інакше він буде clip-нутий.
-            float startDist = Mathf.Max(cam.nearClipPlane + 0.05f, 0.5f);
+            float startDist = Mathf.Max(cam.nearClipPlane + 0.15f, 0.6f);
             Vector3 pos = cam.transform.position
                 + cam.transform.forward * startDist
-                + cam.transform.up * -0.12f; // трохи нижче лінії погляду
+                + cam.transform.up * -0.12f;
+            Debug.Log($"[Smoking] Smoke spawn at {pos} via camera '{cam.name}' depth={cam.depth}");
             SpawnBillboardSmoke(pos, cam.transform.forward, smokeColor, puffs, smokeDuration);
         }
 
@@ -170,6 +178,27 @@ public class PlayerSmoking : MonoBehaviour
     // Sprites/Default ГАРАНТОВАНО підтримує alpha blending на всіх pipeline'ах.
     // ============================================================
 
+    private Camera FindActivePlayerCamera()
+    {
+        // Беремо активну enabled камеру з найбільшим depth (у Unity рендер-порядок
+        // визначається depth'ом; FPS-камера гравця зазвичай має depth > 0).
+        Camera best = null;
+        float bestDepth = float.NegativeInfinity;
+        foreach (var c in Camera.allCameras)
+        {
+            if (c == null || !c.enabled) continue;
+            // Ігноруємо очевидно неправильні (ортографічні UI-камери тощо).
+            if (c.orthographic) continue;
+            if (c.depth > bestDepth)
+            {
+                bestDepth = c.depth;
+                best = c;
+            }
+        }
+        if (best == null) best = Camera.main;
+        return best;
+    }
+
     private void SpawnBillboardSmoke(Vector3 worldPos, Vector3 fwd, Color tint, int count, float dur)
     {
         var root = new GameObject($"SmokeBurst_{Time.frameCount}");
@@ -178,9 +207,12 @@ public class PlayerSmoking : MonoBehaviour
         if (cachedSmokeTex == null) cachedSmokeTex = BuildPuffTexture();
         if (cachedSpriteShader == null)
         {
-            cachedSpriteShader = Shader.Find("Sprites/Default");
+            // Shader choice order: Unlit/Transparent працює у світовому просторі
+            // та має нативний alpha blending. Sprites/Default — запасний.
+            cachedSpriteShader = Shader.Find("Unlit/Transparent");
+            if (cachedSpriteShader == null) cachedSpriteShader = Shader.Find("Legacy Shaders/Transparent/Diffuse");
+            if (cachedSpriteShader == null) cachedSpriteShader = Shader.Find("Sprites/Default");
             if (cachedSpriteShader == null) cachedSpriteShader = Shader.Find("UI/Default");
-            if (cachedSpriteShader == null) cachedSpriteShader = Shader.Find("Unlit/Transparent");
             Debug.Log("[Smoking] Using shader: " + (cachedSpriteShader != null ? cachedSpriteShader.name : "NONE!"));
         }
 

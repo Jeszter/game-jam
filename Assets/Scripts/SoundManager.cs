@@ -30,6 +30,15 @@ public class SoundManager : MonoBehaviour
     public AudioClip menuClick;
     public AudioClip footstep;
 
+    [Header("World SFX")]
+    public AudioClip smokeInhale;   // vape / iqos puff
+    public AudioClip foodEat;       // chewing / gnawing
+    public AudioClip doorSound;     // door open/close
+    public AudioClip tvOn;
+    public AudioClip tvOff;
+    public AudioClip cutsceneVoice; // new: voice/sfx played during the wake-up cutscene
+    public AudioClip pickupSound;   // picking up / dropping objects
+
     [Range(0f, 1f)] public float uiVolume = 0.7f;
 
     private AudioSource uiSource;
@@ -44,15 +53,30 @@ public class SoundManager : MonoBehaviour
         uiSource.playOnAwake = false;
         uiSource.spatialBlend = 0f; // 2D
 
-        // Auto-load clips if not set in inspector
-        if (phoneTap == null) phoneTap = LoadClip("smartphone tap");
-        if (menuClick == null) menuClick = LoadClip("menu options sound");
-        if (footstep == null) footstep = LoadClip("footsteps");
+        // Auto-load clips if not set in inspector.
+        // У білді використовуємо виключно Resources.Load — AssetDatabase недоступний.
+        if (phoneTap == null)    phoneTap    = LoadClip("smartphone tap", "Sound/smartphone tap");
+        if (menuClick == null)   menuClick   = LoadClip("menu options sound", "Sound/menu options sound");
+        if (footstep == null)    footstep    = LoadClip("footsteps", "Sound/footsteps");
+
+        // New world SFX — копії лежать у Resources/Sound/ з коротким ім'ям (CopyResourcesForBuild).
+        if (smokeInhale == null) smokeInhale = LoadClipResources("Sound/smokeInhale", "A_deep,_long_inhale");
+        if (foodEat == null)     foodEat     = LoadClipResources("Sound/foodEat",     "Creature_gnawing_and");
+        if (doorSound == null)   doorSound   = LoadClipResources("Sound/doorSound",   "the_sound_of_a_door");
+        if (tvOn == null)        tvOn        = LoadClipResources("Sound/tvOn",        "the_sound_of_the_TV__#3-on");
+        if (tvOff == null)       tvOff       = LoadClipResources("Sound/tvOff",       "the_sound_of_the_TV__off");
+        if (cutsceneVoice == null) cutsceneVoice = LoadClipResources("Sound/cutsceneVoice", "ElevenLabs_2026-04-18T08_19_13_123");
+        if (pickupSound == null)   pickupSound   = LoadClipResources("Sound/pickupSound",   "Gentle_hand_picking");
     }
 
-    AudioClip LoadClip(string nameWithoutExt)
+    AudioClip LoadClip(string nameWithoutExt, string resourcesPath = null)
     {
-        // Try Resources first
+        // Try Resources first (працює і в редакторі і в білді)
+        if (!string.IsNullOrEmpty(resourcesPath))
+        {
+            var r = Resources.Load<AudioClip>(resourcesPath);
+            if (r != null) return r;
+        }
         var c = Resources.Load<AudioClip>(nameWithoutExt);
         if (c != null) return c;
 
@@ -67,6 +91,30 @@ public class SoundManager : MonoBehaviour
         {
             var a = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>(p);
             if (a != null) return a;
+        }
+#endif
+        return null;
+    }
+
+    /// <summary>
+    /// Завантажує AudioClip: 1) з Resources/ за коротким ім'ям,
+    /// 2) редакторний фолбек через AssetDatabase по префіксу імені файлу.
+    /// </summary>
+    AudioClip LoadClipResources(string resourcesPath, string editorPrefix)
+    {
+        var c = Resources.Load<AudioClip>(resourcesPath);
+        if (c != null) return c;
+#if UNITY_EDITOR
+        string[] guids = UnityEditor.AssetDatabase.FindAssets("t:AudioClip");
+        foreach (var g in guids)
+        {
+            string path = UnityEditor.AssetDatabase.GUIDToAssetPath(g);
+            string fileName = System.IO.Path.GetFileNameWithoutExtension(path);
+            if (!string.IsNullOrEmpty(fileName) && fileName.StartsWith(editorPrefix))
+            {
+                var clip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+                if (clip != null) return clip;
+            }
         }
 #endif
         return null;

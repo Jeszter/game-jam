@@ -80,6 +80,8 @@ public class PickupSystem : MonoBehaviour
         Collider pc = GetComponent<Collider>();
         Collider oc = heldObject.GetComponent<Collider>();
         if (pc && oc) Physics.IgnoreCollision(oc, pc, true);
+
+        PlayPickupSfx(p.transform.position, 1.0f);
     }
 
     private void ReleaseObject(bool doThrow)
@@ -98,16 +100,26 @@ public class PickupSystem : MonoBehaviour
         Collider oc = heldObject.GetComponent<Collider>();
         if (pc && oc) Physics.IgnoreCollision(oc, pc, false);
 
+        // Lower pitch on drop, higher + louder on throw — makes the gesture feel intentional.
+        PlayPickupSfx(heldObject.transform.position, doThrow ? 1.15f : 0.9f);
+
         heldObject = null;
+    }
+
+    private void PlayPickupSfx(Vector3 pos, float pitch)
+    {
+        var sm = SoundManager.Instance;
+        if (sm == null || sm.pickupSound == null) return;
+        sm.PlayAt(sm.pickupSound, pos, 0.85f, pitch * UnityEngine.Random.Range(0.95f, 1.05f));
     }
 
     private void UpdateHint()
     {
         if (hintText == null) return;
         if (heldObject != null)
-            hintText.text = "<color=#FFD700>[E]</color> Покласти   <color=#FFD700>[ЛКМ]</color> Кинути";
+            hintText.text = "<color=#FFD700>[E]</color> Drop   <color=#FFD700>[LMB]</color> Throw";
         else if (lookedObject != null)
-            hintText.text = "<color=#FFD700>[E]</color> Підняти: <b>" + lookedObject.itemName + "</b>";
+            hintText.text = "<color=#FFD700>[E]</color> Pick up: <b>" + lookedObject.itemName + "</b>";
         else
             hintText.text = "";
     }

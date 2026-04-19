@@ -57,6 +57,21 @@ public class BedWakeCutscene : MonoBehaviour
     private Canvas eyelidCanvas;
     private Image  eyelidImage;
 
+    // HUD / hint objects hidden during the cutscene, restored at the end.
+    private GameObject hiddenHud;
+    private GameObject hiddenPickupHint;
+    private GameObject hiddenFoodHint;
+    private GameObject hiddenVictoryTicker;
+    private bool hudWasActive;
+    private bool pickupHintWasActive;
+    private bool foodHintWasActive;
+    private bool victoryTickerWasActive;
+
+    [Header("Wake-up intro sound")]
+    [Tooltip("Звук який грає на самому початку катсцени (напр. будильник / голосове інтро). Якщо порожньо — використовується SoundManager.cutsceneVoice.")]
+    public AudioClip introSound;
+    [Range(0f, 1f)] public float introSoundVolume = 1f;
+
     private void Awake()
     {
         pm = GetComponent<PlayerMovement>();
@@ -75,7 +90,117 @@ public class BedWakeCutscene : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible   = false;
 
+        HideHudDuringCutscene();
         SetupEyelidOverlay();
+    }
+
+    private void HideHudDuringCutscene()
+    {
+        // Хід HUD (полоси дофаміну/голоду, монети) — не потрібні, поки очі закриті.
+        var canvas = GameObject.Find("GameUICanvas");
+        if (canvas != null)
+        {
+            var hudT = canvas.transform.Find("HUD");
+            if (hudT != null)
+            {
+                hiddenHud = hudT.gameObject;
+                hudWasActive = hiddenHud.activeSelf;
+                hiddenHud.SetActive(false);
+            }
+        }
+
+        // Шукаємо також підказки "[E] Pick up" / "[F] Eat", якщо вони встигли створитись.
+        var pickupHint = GameObject.Find("PickupHint");
+        if (pickupHint != null)
+        {
+            hiddenPickupHint = pickupHint;
+            pickupHintWasActive = pickupHint.activeSelf;
+            pickupHint.SetActive(false);
+        }
+
+        var foodHint = GameObject.Find("FoodEatHint");
+        if (foodHint != null)
+        {
+            hiddenFoodHint = foodHint;
+            foodHintWasActive = foodHint.activeSelf;
+            foodHint.SetActive(false);
+        }
+
+        TryHideVictoryTicker();
+    }
+
+    private void TryHideVictoryTicker()
+    {
+        if (hiddenVictoryTicker != null) return; // вже сховано
+
+        // VictoryTicker створюється VictoryManager'ом у Start(), тому при першому виклику
+        // з Awake() його ще нема. Спробуємо знайти; якщо зараз нема — знайдемо пізніше у корутині.
+        var ticker = GameObject.Find("VictoryTicker");
+        if (ticker != null)
+        {
+            hiddenVictoryTicker = ticker;
+            victoryTickerWasActive = ticker.activeSelf;
+            ticker.SetActive(false);
+        }
+    }
+
+    private void RestoreHudAfterCutscene()
+    {
+        if (hiddenHud != null)
+            hiddenHud.SetActive(hudWasActive);
+        if (hiddenPickupHint != null)
+            hiddenPickupHint.SetActive(pickupHintWasActive);
+        if (hiddenFoodHint != null)
+            hiddenFoodHint.SetActive(foodHintWasActive);
+        if (hiddenVictoryTicker != null)
+            hiddenVictoryTicker.SetActive(victoryTickerWasActive);
+    }
+
+    private void PlayIntroSound()
+    {
+        AudioClip clip = introSound;
+
+        // Якщо в інспекторі не заданий — пробуємо знайти файл ElevenLabs_*_sp72_s26_sb23* у проекті
+        // (файл, який запросив користувач на першому скріні).
+        if (clip == null)
+        {
+            // Шлях для білда: копія в Resources/Sound/bedWakeIntro.*
+            clip = Resources.Load<AudioClip>("Sound/bedWakeIntro");
+#if UNITY_EDITOR
+            if (clip == null)
+            {
+                string[] guids = UnityEditor.AssetDatabase.FindAssets("t:AudioClip ElevenLabs_2026-04-19");
+                foreach (var g in guids)
+                {
+                    string path = UnityEditor.AssetDatabase.GUIDToAssetPath(g);
+                    string fname = System.IO.Path.GetFileNameWithoutExtension(path);
+                    if (fname.Contains("sp72_s26_sb23"))
+                    {
+                        clip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+                        break;
+                    }
+                }
+            }
+#endif
+        }
+
+        // Фолбек — cutsceneVoice із SoundManager (стара логіка)
+        if (clip == null && SoundManager.Instance != null)
+            clip = SoundManager.Instance.cutsceneVoice;
+
+        if (clip == null) return;
+
+        // Створюємо тимчасовий AudioSource, щоб звук пережив перехід між сценами та
+        // не обрізався на 1-му кадрі (PlayOneShot SoundManager'а теж норм, але ми хочемо
+        // повний контроль над гучністю і відносною 2D-подачею).
+        var go = new GameObject("BedWakeIntroSound");
+        var src = go.AddComponent<AudioSource>();
+        src.clip = clip;
+        src.spatialBlend = 0f;
+        src.volume = introSoundVolume;
+        src.playOnAwake = false;
+        src.Play();
+        Destroy(go, clip.length + 0.5f);
     }
 
     private void Start()
@@ -151,6 +276,13 @@ public class BedWakeCutscene : MonoBehaviour
         Vector3    camEndLocalPos = new Vector3(0f, finalCameraHeight, 0f);
         Quaternion camEndLocalRot = Quaternion.identity;
 
+        // Грає інтро-звук катсцени (будильник/"wake up" голос) одразу на самому початку.
+        PlayIntroSound();
+
+        // Дочекаємось кадру, щоб VictoryManager.Start() встиг створити VictoryTicker — і тоді ховаємо його теж.
+        yield return null;
+        TryHideVictoryTicker();
+
         // 1) start closed, open eyes, quick blink
         SetEyelidAlpha(1f);
         yield return new WaitForSeconds(0.25f);
@@ -163,6 +295,9 @@ public class BedWakeCutscene : MonoBehaviour
 
         // 2) long sleepy close — играем groggy фразу ("ugh..." / "five more minutes")
         PlayVoice(voiceGroggy);
+        var sm = SoundManager.Instance;
+        if (sm != null && sm.cutsceneVoice != null)
+            sm.Play(sm.cutsceneVoice, 1.0f);
         yield return FadeEyelid(0f, 1f, longBlinkCloseTime);
         yield return new WaitForSeconds(longBlinkHoldTime);
         yield return FadeEyelid(1f, 0f, longBlinkOpenTime);
@@ -249,8 +384,20 @@ public class BedWakeCutscene : MonoBehaviour
             pm.phoneLock = false;
         }
 
+        // HUD знову видимий — катсцена завершена.
+        RestoreHudAfterCutscene();
+
+        // Ще раз гарантуємо, що курсор прихований — деякі UI (CoinFloater/HUD) можуть
+        // створюватись із `ScreenSpaceOverlay` канвасом і несвідомо повертати його.
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible   = false;
+
         // 7) фраза когда окончательно встал
         PlayVoice(voiceStoodUp);
+
+        // Катсцена відпрацювала — вимикаємо компонент, щоб GameOverManager
+        // знову почав перевіряти смерть (він пропускає тик поки cutscene enabled).
+        enabled = false;
     }
 
     private IEnumerator RotateCameraYaw(Quaternion baseRot, float toYaw, float time, float fromYaw)
@@ -276,4 +423,3 @@ public class BedWakeCutscene : MonoBehaviour
             : 1f - Mathf.Pow(-2f * x + 2f, 2f) * 0.5f;
     }
 }
-
